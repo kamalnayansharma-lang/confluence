@@ -51,7 +51,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
+      - "8081:8081"
+      # 8081, not 8080: a sibling project on this same machine
+      # (vuln-remediation-agent's fixer-server) already binds host 8080, so
+      # local dev here runs on 8081 instead -- see DOMAIN in .env. A
+      # *published-but-unused* 8080 mapping would still fail the whole
+      # container start on the OS-level bind conflict, so this isn't
+      # additive with the old port, it replaces it.
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

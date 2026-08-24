@@ -5,35 +5,56 @@
 <title>Driftbridge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700&family=Gabarito:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* Light, soothing two-tone theme -- a soft periwinkle-slate header band
-       (--header-bg) distinct from the airy, barely-tinted page background
-       underneath it (--bg) where the actual content/results live. Neither
-       is stark white: both carry a slight cool-slate tint so the page reads
-       as considered rather than a bare default. */
-    --header-bg: #e7eaf6;
-    --bg: #f6f7fb;
-    --bg-elevated: #ffffff;
-    --bg-elevated-2: #eef0f9;
-    --border: #dbdfef;
-    --text: #232645;
-    --text-muted: #6b6f92;
-    --accent: #e5002b;
-    --accent-hover: #c40025;
-    --accent-blue: #3468c0;
-    --success-bg: rgba(16, 185, 129, 0.12);
-    --success-text: #0e8a5f;
-    --success-border: rgba(16, 185, 129, 0.35);
-    --error-bg: rgba(220, 38, 38, 0.10);
-    --error-text: #b91c1c;
-    --error-border: rgba(220, 38, 38, 0.3);
-    --neutral-bg: rgba(107, 111, 146, 0.10);
-    --neutral-text: #565a78;
-    --warning-bg: rgba(217, 119, 6, 0.12);
-    --warning-text: #92400e;
-    --warning-border: rgba(217, 119, 6, 0.32);
+    /* Neurealm Design System (brand migration, token-only swap -- see
+       Neurealm Design System Guidelines.pdf / desing-system-plugin) --
+       every hex below is a real token from PRIMITIVE.md/LIGHT_SCHEMES.md,
+       not an invented value. Variable NAMES are unchanged from the
+       pre-migration theme on purpose: every component below already
+       reads through these names via var(--x), so swapping only the
+       values here re-skins the whole app without touching a single
+       component rule -- exactly the "master theme settings" swap the
+       guide's Step 5 (non-destructive theme layer mutation) describes.
+       Two exceptions, both judgment calls made explicit rather than
+       applying a technically-correct-but-wrong-looking token literally:
+        - --border uses the Grey-200 primitive, not the "Outline Variant"
+          semantic alias -- that alias resolves to #6D717F, a mid-grey far
+          too dark for a 1px hairline row/card border.
+        - --success/--error/--warning use the provided flat scale steps
+          (e.g. Success-100/800/300) instead of re-deriving alpha-mixed
+          rgba() tints, since the design system already hands us discrete
+          steps for exactly this bg/text/border triad shape. */
+    --header-bg: #DDE1FF;    /* Primary-200 */
+    --bg: #F1F0FF;           /* Schemes/Background = Primary-100 */
+    --bg-elevated: #FFFFFF;  /* Surface Container Lowest */
+    --bg-elevated-2: #F3F4F6; /* Grey-100, Surface Container */
+    --border: #E5E7EA;       /* Grey-200 -- see note above */
+    --text: #131927;         /* Grey-900, Schemes/On Background */
+    --text-muted: #6D717F;   /* Grey-500 */
+    --accent: #081160;       /* Primary-900, Schemes/Primary */
+    --accent-rgb: 8, 17, 96;       /* same value as --accent, comma-separated for rgba() mixes below */
+    --accent-hover: #202B81; /* Primary-800 */
+    --accent-blue: #3182CE;  /* Secondary-600 */
+    --accent-blue-rgb: 49, 130, 206; /* same value as --accent-blue, comma-separated for rgba() mixes below */
+    --success-bg: #E9F1EC;   /* Success-100 */
+    --success-text: #1D6336; /* Success-800 */
+    --success-border: #A1E2B9; /* Success-300 */
+    --error-bg: #F2E9E9;     /* Error-100 */
+    --error-text: #931616;   /* Error-700 */
+    --error-border: #E89B9B; /* Error-300 */
+    --neutral-bg: #F3F4F6;   /* Grey-100 */
+    --neutral-text: #4D5461; /* Grey-600 */
+    --warning-bg: #F2EEDF;   /* Warning-100 */
+    --warning-text: #6E4B12; /* Warning-800 */
+    --warning-border: #EFB552; /* Warning-400 */
+    /* Dual-font track (TYPOGRAPHY.md): Exo for headers/dashboard-level
+       content, Gabarito for dense tabular/technical panes -- this app is
+       mostly the latter (run history tables, config forms, diff views),
+       so most of the page actually reads in the secondary track. */
+    --font-primary: 'Exo', system-ui, -apple-system, sans-serif;
+    --font-secondary: 'Gabarito', system-ui, -apple-system, sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -41,11 +62,18 @@
   html { background: var(--bg); }
 
   body {
-    font-family: 'Exo', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-primary);
     margin: 0;
     color: var(--text);
     background: var(--bg);
     min-height: 100vh;
+  }
+
+  /* Secondary-Gabarito track -- technical side panes, data grids, tabular
+     layouts, form inputs (see TYPOGRAPHY.md's Do's). Headings/nav/brand
+     stay on the primary Exo track (body's default), inherited as normal. */
+  table, input, select, code, .hint {
+    font-family: var(--font-secondary);
   }
 
   /* Full-bleed header band -- edge to edge across the viewport, visually
@@ -67,8 +95,8 @@
     margin: 0 auto;
     padding: 2rem 1.5rem 3rem;
     background-image:
-      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(52, 104, 192, 0.05), transparent 60%),
-      radial-gradient(ellipse 700px 400px at 100% 0%, rgba(229, 0, 43, 0.045), transparent 55%);
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(var(--accent-blue-rgb), 0.05), transparent 60%),
+      radial-gradient(ellipse 700px 400px at 100% 0%, rgba(var(--accent-rgb), 0.045), transparent 55%);
     background-attachment: fixed;
   }
 
@@ -171,10 +199,13 @@
     border-radius: 8px;
     box-sizing: border-box;
     font-size: 0.9rem;
-    font-family: inherit;
+    /* font-family intentionally NOT set here -- the earlier
+       table/input/select/code/.hint rule already puts these on the
+       Secondary-Gabarito track; redeclaring `inherit` here would win the
+       cascade (same specificity, declared later) and silently undo it. */
   }
   input::placeholder { color: #a6aac8; }
-  input:focus, select:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(52, 104, 192, 0.18); }
+  input:focus, select:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(var(--accent-blue-rgb), 0.18); }
   select { appearance: none; }
 
   .hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.3rem; line-height: 1.4; }
@@ -225,15 +256,15 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    background: rgba(52, 104, 192, 0.10);
-    border: 1px solid rgba(52, 104, 192, 0.5);
+    background: rgba(var(--accent-blue-rgb), 0.10);
+    border: 1px solid rgba(var(--accent-blue-rgb), 0.5);
     color: var(--accent-blue);
     padding: 0.45rem 0.9rem 0.45rem 0.7rem;
     font-size: 0.82rem;
     font-weight: 600;
     border-radius: 6px;
   }
-  .btn-test-connection:hover { background: rgba(52, 104, 192, 0.2); color: var(--accent-blue); }
+  .btn-test-connection:hover { background: rgba(var(--accent-blue-rgb), 0.2); color: var(--accent-blue); }
   .btn-test-connection::before {
     content: "";
     width: 13px;
@@ -251,8 +282,8 @@
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    background: rgba(52, 104, 192, 0.12);
-    border: 1px solid rgba(52, 104, 192, 0.32);
+    background: rgba(var(--accent-blue-rgb), 0.12);
+    border: 1px solid rgba(var(--accent-blue-rgb), 0.32);
     color: var(--accent-blue);
     padding: 0.2rem 0.3rem 0.2rem 0.65rem;
     border-radius: 999px;
@@ -271,7 +302,7 @@
     font-size: 0.95rem;
     cursor: pointer;
   }
-  .taglist-chip-remove:hover { background: rgba(52, 104, 192, 0.22); }
+  .taglist-chip-remove:hover { background: rgba(var(--accent-blue-rgb), 0.22); }
   .taglist-add-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
   .taglist-add-row .taglist-input { margin-top: 0; flex: 1; }
   .taglist-add-row .taglist-add-btn { flex-shrink: 0; }
@@ -319,9 +350,9 @@
   .badge-no_changes { background: var(--neutral-bg); color: var(--neutral-text); }
   .badge-warning { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
   .badge-running {
-    background: rgba(52, 104, 192, 0.12);
+    background: rgba(var(--accent-blue-rgb), 0.12);
     color: var(--accent-blue);
-    border-color: rgba(52, 104, 192, 0.35);
+    border-color: rgba(var(--accent-blue-rgb), 0.35);
     animation: pulse-running 1.6s ease-in-out infinite;
   }
   @keyframes pulse-running {
@@ -358,7 +389,7 @@
     font-size: 0.9rem;
   }
   .flow-step--done .flow-node { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
-  .flow-step--active .flow-node { background: rgba(52, 104, 192, 0.14); border-color: rgba(52, 104, 192, 0.5); color: var(--accent-blue); animation: pulse-running 1.6s ease-in-out infinite; }
+  .flow-step--active .flow-node { background: rgba(var(--accent-blue-rgb), 0.14); border-color: rgba(var(--accent-blue-rgb), 0.5); color: var(--accent-blue); animation: pulse-running 1.6s ease-in-out infinite; }
   .flow-step--failed .flow-node { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
   .flow-step--warning .flow-node { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
   .flow-step--skipped .flow-node { background: var(--neutral-bg); border-color: transparent; color: var(--neutral-text); }
@@ -428,13 +459,13 @@
   <header class="topband">
     <div class="topband-inner">
       <div class="brand">
-        <svg class="brand-mark" width="26" height="26" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <circle cx="6" cy="16" r="2.6" fill="#e5002b"/>
-          <circle cx="16" cy="16" r="2.6" fill="#e5002b"/>
-          <circle cx="11" cy="6" r="2.6" fill="#e5002b"/>
-          <line x1="6" y1="16" x2="11" y2="6" stroke="#e5002b" stroke-width="1.3" opacity="0.55"/>
-          <line x1="16" y1="16" x2="11" y2="6" stroke="#e5002b" stroke-width="1.3" opacity="0.55"/>
-          <line x1="6" y1="16" x2="16" y2="16" stroke="#e5002b" stroke-width="1.3" opacity="0.55"/>
+        <svg class="brand-mark" width="26" height="26" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="color: var(--accent);">
+          <circle cx="6" cy="16" r="2.6" fill="currentColor"/>
+          <circle cx="16" cy="16" r="2.6" fill="currentColor"/>
+          <circle cx="11" cy="6" r="2.6" fill="currentColor"/>
+          <line x1="6" y1="16" x2="11" y2="6" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
+          <line x1="16" y1="16" x2="11" y2="6" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
+          <line x1="6" y1="16" x2="16" y2="16" stroke="currentColor" stroke-width="1.3" opacity="0.55"/>
         </svg>
         <div class="brand-text">
           <span class="brand-name">Driftbridge</span>
