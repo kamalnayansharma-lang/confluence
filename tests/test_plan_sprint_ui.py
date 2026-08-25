@@ -166,16 +166,23 @@ def test_plan_sprint_detail_missing_plan_redirects_with_error(client):
     assert "error=" in resp.headers["location"]
 
 
-def test_plan_sprint_detail_only_confirmed_pages_get_a_checkbox(client):
-    """Page 1001 is still "planned" (no story yet -- Confirm hasn't run),
-    page 1002 is "confirmed" -- only 1002 should be selectable for batch
-    approval.
+def test_plan_sprint_detail_each_row_gets_the_checkbox_matching_its_phase(client):
+    """Page 1001 is still "planned" (no story yet -- Confirm hasn't run) --
+    it gets a row-select-planned checkbox tied to confirm-selected-form.
+    Page 1002 is "confirmed" -- it gets a row-select-confirmed checkbox
+    tied to approve-selected-form. Neither gets the other's checkbox.
     """
     _seed_plan()
     resp = client.get("/ui/plan-sprint/sprint-24")
     assert resp.status_code == 200
-    assert 'name="page_ids" value="1002"' in resp.text
-    assert 'name="page_ids" value="1001"' not in resp.text
+
+    assert 'class="row-select-planned" name="page_ids" value="1001" form="confirm-selected-form"' in resp.text
+    assert 'class="row-select-confirmed" name="page_ids" value="1002" form="approve-selected-form"' in resp.text
+    # Cross-check: 1001 never gets the confirmed-style checkbox, 1002 never gets the planned-style one.
+    assert 'value="1001" form="approve-selected-form"' not in resp.text
+    assert 'value="1002" form="confirm-selected-form"' not in resp.text
+
+    assert 'id="confirm-selected-form"' in resp.text
     assert 'id="approve-selected-form"' in resp.text
     assert 'id="pager-controls"' in resp.text
 
@@ -295,6 +302,168 @@ def test_plan_sprint_approve_selected_rejects_empty_selection(client):
 
     resp = client.post(
         "/ui/plan-sprint/sprint-24/approve-selected", data={}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert "No%20stories%20selected" in resp.headers["location"]
+
+
+def _planned_page(page_id: str, title: str) -> SprintPlanPage:
+    return SprintPlanPage(
+        page_id=page_id, page_title=title, page_url=f"https://x/{page_id}", page_version=1,
+        page_body_html=f"<p>{title}</p>", page_labels=["brd"], previous_version=None, diff_text=title,
+        is_first_seen=True, body_checksum=page_id, predicted_labels=[], applied_labels=[], label_gap=[],
+        depends_on_page_ids=[], dependency_rationale="", phase="planned",
+    )
+
+
+async def test_confirm_one_page_creates_a_new_story_when_none_exists(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.jira.story_writer import JiraStoryContent
+    from confluence_pr_agent.models import JiraIssueResult
+    from confluence_pr_agent.storage.page_store import PageStore
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    page_store = PageStore(tmp_path / "store.json")
+    jira = AsyncMock()
+    jira.create_issue.return_value = JiraIssueResult(key="SD-9", url="https://x/browse/SD-9")
+
+    async def _fake_story(settings, diff):
+        return JiraStoryContent(summary="s", description="d", acceptance_criteria=[])
+
+    monkeypatch.setattr(plan_sprint_module, "generate_story_content", _fake_story)
+
+    sp = _planned_page("3001", "New Story")
+    settings = get_settings("testuser")
+    settings.jira_base_url = "https://x.atlassian.net"
+    settings.jira_project_key = "SD"
+    settings.jira_issue_type = "Story"
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+
+    assert error is None
+    assert sp["phase"] == "confirmed"
+    assert sp["jira_issue_key"] == "SD-9"
+    jira.create_issue.assert_awaited_once()
+    jira.add_comment.assert_awaited_once()
+    # remember_jira_issue is a merge, not an insert (see
+    # storage/page_store.py) -- a page never seen by PageStore before (no
+    # prior full record from a real pipeline run) correctly stays absent,
+    # not partially/incorrectly recorded.
+    assert page_store.get("3001") is None
+
+
+async def test_confirm_one_page_reuses_an_existing_open_story(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.models import JiraIssueStatus
+    from confluence_pr_agent.storage.page_store import PageStore, StoredPage
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    page_store = PageStore(tmp_path / "store.json")
+    page_store.put(
+        StoredPage(
+            page_id="3002", title="Existing", version=1, body_html="<p>x</p>", body_checksum="x",
+            url="https://x/3002", jira_issue_key="SD-8",
+        )
+    )
+    jira = AsyncMock()
+    jira.get_issue_status.return_value = JiraIssueStatus(key="SD-8", status_name="To Do", status_category="new")
+
+    sp = _planned_page("3002", "Existing")
+    settings = get_settings("testuser")
+    settings.jira_base_url = "https://x.atlassian.net"
+    settings.jira_project_key = "SD"
+    settings.jira_issue_type = "Story"
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+
+    assert error is None
+    assert sp["phase"] == "confirmed"
+    assert sp["jira_issue_key"] == "SD-8"
+    jira.create_issue.assert_not_awaited()  # reused, not duplicated
+
+
+async def test_confirm_one_page_returns_error_and_leaves_phase_unchanged_on_failure(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.jira.story_writer import JiraStoryContent
+    from confluence_pr_agent.storage.page_store import PageStore
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    page_store = PageStore(tmp_path / "store.json")
+    jira = AsyncMock()
+    jira.create_issue.side_effect = RuntimeError("Jira is down")
+
+    async def _fake_story(settings, diff):
+        return JiraStoryContent(summary="s", description="d", acceptance_criteria=[])
+
+    monkeypatch.setattr(plan_sprint_module, "generate_story_content", _fake_story)
+
+    sp = _planned_page("3003", "Broken")
+    settings = get_settings("testuser")
+    settings.jira_base_url = "https://x.atlassian.net"
+    settings.jira_project_key = "SD"
+    settings.jira_issue_type = "Story"
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+
+    assert error is not None
+    assert "Jira is down" in error
+    assert sp["phase"] == "planned"  # unchanged on failure
+
+
+def test_plan_sprint_confirm_selected_only_confirms_chosen_pages(client, monkeypatch):
+    """Two planned pages, only one selected -- confirms the batch endpoint
+    calls Jira once for the selected page only, and the other stays
+    "planned" rather than being swept up too.
+    """
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.jira.story_writer import JiraStoryContent
+    from confluence_pr_agent.models import JiraIssueResult
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    settings = get_settings("testuser")
+    store = SprintPlanStore(settings.sprint_plan_store_path)
+    store.put(
+        SprintPlan(
+            sprint_tag="sprint-confirm-batch", gate_label="brd", space_key="SD",
+            created_at="2026-01-01T00:00:00+00:00", order=["4001", "4002"],
+            pages=[_planned_page("4001", "Story A"), _planned_page("4002", "Story B")],
+        )
+    )
+
+    fake_jira = AsyncMock()
+    fake_jira.create_issue.return_value = JiraIssueResult(key="SD-201", url="https://x/browse/SD-201")
+
+    class _FakeJiraClient:
+        def __new__(cls, *args, **kwargs):
+            return fake_jira
+
+    async def _fake_story(settings, diff):
+        return JiraStoryContent(summary="s", description="d", acceptance_criteria=[])
+
+    monkeypatch.setattr(plan_sprint_module, "JiraClient", _FakeJiraClient)
+    monkeypatch.setattr(plan_sprint_module, "generate_story_content", _fake_story)
+
+    resp = client.post(
+        "/ui/plan-sprint/sprint-confirm-batch/confirm-selected",
+        data={"page_ids": ["4001"]},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert "error" not in resp.headers.get("location", "")
+
+    fake_jira.create_issue.assert_awaited_once()
+    updated = store.get("sprint-confirm-batch")
+    pages_by_id = {p["page_id"]: p for p in updated["pages"]}
+    assert pages_by_id["4001"]["phase"] == "confirmed"
+    assert pages_by_id["4001"]["jira_issue_key"] == "SD-201"
+    assert pages_by_id["4002"]["phase"] == "planned"  # untouched -- not selected
+
+
+def test_plan_sprint_confirm_selected_rejects_empty_selection(client):
+    _seed_plan()
+    resp = client.post(
+        "/ui/plan-sprint/sprint-24/confirm-selected", data={}, follow_redirects=False
     )
     assert resp.status_code == 303
     assert "No%20stories%20selected" in resp.headers["location"]

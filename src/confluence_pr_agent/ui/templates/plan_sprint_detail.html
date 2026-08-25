@@ -15,46 +15,75 @@
 
 {% set any_planned = pages|selectattr("phase", "equalto", "planned")|list|length > 0 %}
 {% if any_planned %}
-<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" style="margin-bottom: 1.25rem;" id="confirm-form"
-      onsubmit="if (!confirm('Create/update a Jira story for every planned page and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
-  <button type="submit" id="confirm-submit-btn">Confirm plan &mdash; create stories + dependency links in Jira</button>
+<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" style="margin-bottom: 0.75rem;" id="confirm-form"
+      onsubmit="if (!confirm('Create/update a Jira story for EVERY still-planned page and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
+  <button type="submit" id="confirm-submit-btn">Confirm plan (all) &mdash; create stories + dependency links in Jira</button>
   <span class="hint" id="confirm-status" style="display: none; margin-left: 0.5rem;">
     &#9203; Creating/updating Jira stories and links&hellip;
   </span>
 </form>
+
+<!-- Standalone form, referenced by each "planned" row's checkbox via the
+     `form` attribute -- checkboxes live inside table rows (which already
+     contain their own forms elsewhere), and HTML doesn't allow nesting a
+     <form> inside another <form>, so this is the one way to associate
+     inputs elsewhere in the DOM with a single submit button here. -->
+<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm-selected" id="confirm-selected-form"
+      style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
+      onsubmit="
+        var n = document.querySelectorAll('.row-select-planned:checked').length;
+        if (n === 0) { alert('Select at least one story first.'); return false; }
+        if (!confirm('Create/update a Jira story for ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + '?')) return false;
+        document.getElementById('confirm-selected-btn').disabled = true;
+        document.getElementById('confirm-selected-btn').textContent = 'Confirming…';
+        return true;">
+  <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
+    <input type="checkbox" id="select-all-planned-checkbox" onclick="document.querySelectorAll('.row-select-planned').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
+    Select all planned
+  </label>
+  <button type="submit" id="confirm-selected-btn">Confirm selected</button>
+  <span class="hint" id="selected-planned-count"></span>
+</form>
+<script>
+  (function () {
+    function updateCount() {
+      var n = document.querySelectorAll(".row-select-planned:checked").length;
+      var el = document.getElementById("selected-planned-count");
+      el.textContent = n ? n + " selected" : "";
+    }
+    document.querySelectorAll(".row-select-planned").forEach(function (cb) {
+      cb.addEventListener("change", updateCount);
+    });
+  })();
+</script>
 {% endif %}
 
 {% set any_confirmed = pages|selectattr("phase", "equalto", "confirmed")|list|length > 0 %}
 {% if any_confirmed %}
-<!-- Standalone form, referenced by each row's checkbox via the `form`
-     attribute -- checkboxes live inside table rows (which already contain
-     their own per-row Approve forms), and HTML doesn't allow nesting a
-     <form> inside another <form>, so this is the one way to associate
-     inputs elsewhere in the DOM with a single submit button here. -->
 <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/approve-selected" id="approve-selected-form"
       style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
       onsubmit="
-        var n = document.querySelectorAll('.row-select:checked').length;
+        var n = document.querySelectorAll('.row-select-confirmed:checked').length;
         if (n === 0) { alert('Select at least one story first.'); return false; }
         if (!confirm('Move ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + ' to ' + {{ (approved_status_name|default('the approved status', true)) | tojson }} + '?')) return false;
         document.getElementById('approve-selected-btn').disabled = true;
         document.getElementById('approve-selected-btn').textContent = 'Approving…';
         return true;">
   <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
-    <input type="checkbox" id="select-all-checkbox" onclick="document.querySelectorAll('.row-select').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
+    <input type="checkbox" id="select-all-confirmed-checkbox" onclick="document.querySelectorAll('.row-select-confirmed').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
     Select all confirmed
   </label>
   <button type="submit" id="approve-selected-btn">Approve selected</button>
-  <span class="hint" id="selected-count"></span>
+  <span class="hint" id="selected-confirmed-count"></span>
 </form>
 <script>
   (function () {
     function updateCount() {
-      var n = document.querySelectorAll(".row-select:checked").length;
-      var el = document.getElementById("selected-count");
+      var n = document.querySelectorAll(".row-select-confirmed:checked").length;
+      var el = document.getElementById("selected-confirmed-count");
       el.textContent = n ? n + " selected" : "";
     }
-    document.querySelectorAll(".row-select").forEach(function (cb) {
+    document.querySelectorAll(".row-select-confirmed").forEach(function (cb) {
       cb.addEventListener("change", updateCount);
     });
   })();
@@ -86,8 +115,10 @@
     {% for p in pages %}
     <tr>
       <td>
-        {% if p.phase == "confirmed" %}
-          <input type="checkbox" class="row-select" name="page_ids" value="{{ p.page_id }}" form="approve-selected-form">
+        {% if p.phase == "planned" %}
+          <input type="checkbox" class="row-select-planned" name="page_ids" value="{{ p.page_id }}" form="confirm-selected-form">
+        {% elif p.phase == "confirmed" %}
+          <input type="checkbox" class="row-select-confirmed" name="page_ids" value="{{ p.page_id }}" form="approve-selected-form">
         {% endif %}
       </td>
       <td>{{ loop.index }}</td>

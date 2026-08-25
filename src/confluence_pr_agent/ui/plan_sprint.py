@@ -263,6 +263,81 @@ async def plan_sprint_detail(request: Request, sprint_tag: str, username: str = 
     )
 
 
+async def _confirm_one_page(
+    settings, jira: JiraClient, page_store: PageStore, sp: SprintPlanPage, sprint_tag: str
+) -> str | None:
+    """Shared by the "Confirm plan" (all) and "Confirm selected" (batch)
+    actions -- creates or reuses this page's Jira story, mutating `sp` in
+    place. The caller is responsible for plan_store.put(plan) once, after
+    every page in a batch is done. Returns an error message on failure,
+    None on success -- never raises, so a batch call can keep going through
+    the rest of a selection after one page fails.
+    """
+    try:
+        diff = _page_diff(sp)
+        previous = page_store.get(sp["page_id"])
+        existing_key = previous.get("jira_issue_key") if previous else None
+        jira_issue: JiraIssueResult | None = None
+        if existing_key:
+            try:
+                status = await jira.get_issue_status(existing_key)
+                if status.is_open:
+                    jira_issue = JiraIssueResult(
+                        key=status.key, url=f"{settings.jira_base_url.rstrip('/')}/browse/{status.key}"
+                    )
+            except Exception as exc:
+                logger.warning("Could not check existing story %s for page %s: %s", existing_key, sp["page_id"], exc)
+
+        if jira_issue is None:
+            story = await generate_story_content(settings, diff)
+            jira_issue = await jira.create_issue(
+                project_key=settings.jira_project_key,
+                issue_type=settings.jira_issue_type,
+                summary=story.summary,
+                description=story.description,
+                acceptance_criteria=story.acceptance_criteria,
+            )
+            try:
+                await jira.add_comment(
+                    jira_issue.key,
+                    f"Part of sprint `{sprint_tag}` (planned via Plan a Sprint). Full current spec, "
+                    f"as of v{sp['page_version']}:\n\n{sp['diff_text'][:8000]}",
+                )
+            except Exception as exc:
+                logger.warning("Failed to comment spec on new story %s: %s", jira_issue.key, exc)
+
+        sp["jira_issue_key"] = jira_issue.key
+        sp["jira_issue_url"] = jira_issue.url
+        sp["phase"] = "confirmed"
+        page_store.remember_jira_issue(sp["page_id"], jira_issue.key)
+        return None
+    except Exception as exc:
+        return f"{sp['page_title']}: {exc}"
+
+
+async def _link_confirmed_dependencies(jira: JiraClient, plan: SprintPlan) -> None:
+    """Writes "from blocks to" for every proposed edge where both sides
+    currently have a story key -- run after every Confirm/Confirm-selected
+    call (not just once), so a dependency edge involving a page confirmed
+    in an earlier batch still gets linked once its counterpart catches up.
+    """
+    keys_by_page = {sp["page_id"]: sp.get("jira_issue_key") for sp in plan["pages"]}
+    for sp in plan["pages"]:
+        from_key = keys_by_page.get(sp["page_id"])
+        if not from_key:
+            continue
+        for dep_page_id in sp["depends_on_page_ids"]:
+            to_key = keys_by_page.get(dep_page_id)
+            if not to_key or to_key == from_key:
+                continue
+            try:
+                # dep_page_id blocks sp["page_id"] -- the dependency must
+                # come first, so it's the inward "Blocks" issue.
+                await jira.link_issues(to_key, from_key, link_type="Blocks")
+            except Exception as exc:
+                logger.warning("Failed to link %s -> %s: %s", to_key, from_key, exc)
+
+
 @router.post("/ui/plan-sprint/{sprint_tag}/confirm")
 async def plan_sprint_confirm(request: Request, sprint_tag: str, username: str = Depends(current_username)):
     settings = get_settings(username)
@@ -271,77 +346,76 @@ async def plan_sprint_confirm(request: Request, sprint_tag: str, username: str =
     if plan is None:
         return RedirectResponse(url="/ui/plan-sprint?error=No such plan.", status_code=303)
 
+    errors: list[str] = []
     try:
-        # Stories first, for every still-"planned" page -- reusing an
-        # existing still-open story the same way
-        # pipeline/orchestrator.py does, keyed off PageStore.
         for sp in plan["pages"]:
             if sp["phase"] != "planned":
                 continue
-            diff = _page_diff(sp)
-            previous = page_store.get(sp["page_id"])
-            existing_key = previous.get("jira_issue_key") if previous else None
-            jira_issue: JiraIssueResult | None = None
-            if existing_key:
-                try:
-                    status = await jira.get_issue_status(existing_key)
-                    if status.is_open:
-                        jira_issue = JiraIssueResult(
-                            key=status.key, url=f"{settings.jira_base_url.rstrip('/')}/browse/{status.key}"
-                        )
-                except Exception as exc:
-                    logger.warning("Could not check existing story %s for page %s: %s", existing_key, sp["page_id"], exc)
-
-            if jira_issue is None:
-                story = await generate_story_content(settings, diff)
-                jira_issue = await jira.create_issue(
-                    project_key=settings.jira_project_key,
-                    issue_type=settings.jira_issue_type,
-                    summary=story.summary,
-                    description=story.description,
-                    acceptance_criteria=story.acceptance_criteria,
-                )
-                try:
-                    await jira.add_comment(
-                        jira_issue.key,
-                        f"Part of sprint `{sprint_tag}` (planned via Plan a Sprint). Full current spec, "
-                        f"as of v{sp['page_version']}:\n\n{sp['diff_text'][:8000]}",
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to comment spec on new story %s: %s", jira_issue.key, exc)
-
-            sp["jira_issue_key"] = jira_issue.key
-            sp["jira_issue_url"] = jira_issue.url
-            sp["phase"] = "confirmed"
-            page_store.remember_jira_issue(sp["page_id"], jira_issue.key)
-
-        # Then dependency links, once every page in this plan has a story
-        # key -- writing "from blocks to" for each proposed edge.
-        keys_by_page = {sp["page_id"]: sp.get("jira_issue_key") for sp in plan["pages"]}
-        for sp in plan["pages"]:
-            from_key = keys_by_page.get(sp["page_id"])
-            if not from_key:
-                continue
-            for dep_page_id in sp["depends_on_page_ids"]:
-                to_key = keys_by_page.get(dep_page_id)
-                if not to_key or to_key == from_key:
-                    continue
-                try:
-                    # dep_page_id blocks sp["page_id"] -- the dependency
-                    # must land first, so it's the inward "Blocks" issue.
-                    await jira.link_issues(to_key, from_key, link_type="Blocks")
-                except Exception as exc:
-                    logger.warning("Failed to link %s -> %s: %s", to_key, from_key, exc)
-
+            error = await _confirm_one_page(settings, jira, page_store, sp, sprint_tag)
+            if error:
+                errors.append(error)
+        await _link_confirmed_dependencies(jira, plan)
         plan_store.put(plan)
     except Exception as exc:
         logger.exception("Confirming sprint plan %s failed", sprint_tag)
-        return RedirectResponse(url=f"/ui/plan-sprint/{sprint_tag}?error=Confirm failed: {exc}", status_code=303)
+        errors.append(str(exc))
     finally:
         await confluence.aclose()
         await jira.aclose()
 
-    return RedirectResponse(url=f"/ui/plan-sprint/{sprint_tag}", status_code=303)
+    url = f"/ui/plan-sprint/{sprint_tag}"
+    if errors:
+        url += f"?error=Confirm failed for some pages: " + " | ".join(errors)
+    return RedirectResponse(url=url, status_code=303)
+
+
+@router.post("/ui/plan-sprint/{sprint_tag}/confirm-selected")
+async def plan_sprint_confirm_selected(
+    request: Request, sprint_tag: str, page_ids: list[str] = Form(default=[]), username: str = Depends(current_username)
+):
+    """The "Confirm selected" master button -- like plan_sprint_confirm but
+    scoped to a chosen subset of still-"planned" pages, for reviewing and
+    confirming a batch incrementally rather than all-or-nothing.
+    """
+    settings = get_settings(username)
+    confluence, jira, page_store, plan_store = _clients(settings)
+    plan = plan_store.get(sprint_tag)
+    if plan is None:
+        return RedirectResponse(url="/ui/plan-sprint?error=No such plan.", status_code=303)
+    if not page_ids:
+        return RedirectResponse(url=f"/ui/plan-sprint/{sprint_tag}?error=No stories selected.", status_code=303)
+
+    pages_by_id = {sp["page_id"]: sp for sp in plan["pages"]}
+    errors: list[str] = []
+    confirmed_count = 0
+    try:
+        for page_id in page_ids:
+            sp = pages_by_id.get(page_id)
+            if sp is None:
+                errors.append(f"{page_id}: not found in this plan.")
+                continue
+            if sp["phase"] != "planned":
+                errors.append(f"{sp['page_title']}: already {sp['phase']}, not planned.")
+                continue
+            error = await _confirm_one_page(settings, jira, page_store, sp, sprint_tag)
+            if error:
+                errors.append(error)
+            else:
+                confirmed_count += 1
+        await _link_confirmed_dependencies(jira, plan)
+        plan_store.put(plan)
+    except Exception as exc:
+        logger.exception("Confirming selected pages in sprint %s failed", sprint_tag)
+        errors.append(str(exc))
+    finally:
+        await confluence.aclose()
+        await jira.aclose()
+
+    url = f"/ui/plan-sprint/{sprint_tag}"
+    if errors:
+        summary = f"Confirmed {confirmed_count}/{len(page_ids)}. Failed: " + " | ".join(errors)
+        url += f"?error={summary}"
+    return RedirectResponse(url=url, status_code=303)
 
 
 async def _approve_one_page(jira: JiraClient, plan: SprintPlan, page_id: str, approved_status_name: str) -> str | None:
