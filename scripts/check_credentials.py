@@ -167,6 +167,11 @@ _ENGINE_REQUIREMENTS = {
         "install": "see https://antigravity.google/docs/cli/overview",
         "credential_env": None,  # OAuth-only -- run `agy login` interactively once
     },
+    "kiro": {
+        "binary": "kiro-cli",
+        "install": "curl -fsSL https://cli.kiro.dev/install | bash",
+        "credential_env": "KIRO_API_KEY",
+    },
 }
 
 

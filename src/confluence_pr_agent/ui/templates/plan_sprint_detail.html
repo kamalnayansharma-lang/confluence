@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/ui/plan-sprint">&larr; Back to Plan a Sprint</a></p>
+<h1>Sprint: {{ plan.sprint_tag }}</h1>
+<p class="subtitle">
+  {{ pages|length }} page{{ "s" if pages|length != 1 else "" }}, in the order shown below.
+  Order is fixed once planned -- re-plan doesn't silently reorder a sprint that's already partway through.
+</p>
+
+{% if error %}
+<div class="banner" style="background: var(--error-bg); border-color: var(--error-border); color: var(--error-text);">
+  {{ error }}
+</div>
+{% endif %}
+
+{% set any_planned = pages|selectattr("phase", "equalto", "planned")|list|length > 0 %}
+{% if any_planned %}
+<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" style="margin-bottom: 1.25rem;" id="confirm-form"
+      onsubmit="if (!confirm('Create/update a Jira story for every planned page and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
+  <button type="submit" id="confirm-submit-btn">Confirm plan &mdash; create stories + dependency links in Jira</button>
+  <span class="hint" id="confirm-status" style="display: none; margin-left: 0.5rem;">
+    &#9203; Creating/updating Jira stories and links&hellip;
+  </span>
+</form>
+{% endif %}
+
+{% set any_confirmed = pages|selectattr("phase", "equalto", "confirmed")|list|length > 0 %}
+{% if any_confirmed %}
+<!-- Standalone form, referenced by each row's checkbox via the `form`
+     attribute -- checkboxes live inside table rows (which already contain
+     their own per-row Approve forms), and HTML doesn't allow nesting a
+     <form> inside another <form>, so this is the one way to associate
+     inputs elsewhere in the DOM with a single submit button here. -->
+<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/approve-selected" id="approve-selected-form"
+      style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
+      onsubmit="
+        var n = document.querySelectorAll('.row-select:checked').length;
+        if (n === 0) { alert('Select at least one story first.'); return false; }
+        if (!confirm('Move ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + ' to ' + {{ (approved_status_name|default('the approved status', true)) | tojson }} + '?')) return false;
+        document.getElementById('approve-selected-btn').disabled = true;
+        document.getElementById('approve-selected-btn').textContent = 'Approving…';
+        return true;">
+  <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
+    <input type="checkbox" id="select-all-checkbox" onclick="document.querySelectorAll('.row-select').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
+    Select all confirmed
+  </label>
+  <button type="submit" id="approve-selected-btn">Approve selected</button>
+  <span class="hint" id="selected-count"></span>
+</form>
+<script>
+  (function () {
+    function updateCount() {
+      var n = document.querySelectorAll(".row-select:checked").length;
+      var el = document.getElementById("selected-count");
+      el.textContent = n ? n + " selected" : "";
+    }
+    document.querySelectorAll(".row-select").forEach(function (cb) {
+      cb.addEventListener("change", updateCount);
+    });
+  })();
+</script>
+{% endif %}
+
+<div id="pager-controls" style="display: none; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+  <button type="button" class="btn-secondary" id="pager-prev">&larr; Prev</button>
+  <span class="hint" id="pager-status"></span>
+  <button type="button" class="btn-secondary" id="pager-next">Next &rarr;</button>
+</div>
+
+<table id="stories-table">
+  <thead>
+    <tr>
+      <th></th>
+      <th>#</th>
+      <th>Page</th>
+      <th>Predicted repo(s)</th>
+      <th>Applied labels</th>
+      <th>Blocked by</th>
+      <th>Blocks</th>
+      <th>Story</th>
+      <th>Phase</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in pages %}
+    <tr>
+      <td>
+        {% if p.phase == "confirmed" %}
+          <input type="checkbox" class="row-select" name="page_ids" value="{{ p.page_id }}" form="approve-selected-form">
+        {% endif %}
+      </td>
+      <td>{{ loop.index }}</td>
+      <td>
+        <a href="{{ p.page_url }}" target="_blank" rel="noopener">{{ p.page_title }}</a>
+        {% if p.label_gap %}
+          <div class="hint" style="color: var(--warning-text); margin-top: 0.25rem;">
+            &#9888;&#65039; missing label{{ "s" if p.label_gap|length != 1 else "" }}:
+            {% for lbl in p.label_gap %}<code>{{ lbl }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+        {% endif %}
+      </td>
+      <td>
+        {% for lbl in p.predicted_labels %}
+          {% if lbl in p.label_gap %}
+            <code title="Predicted, but not yet applied to the page" style="color: var(--warning-text); font-weight: 600;">&#9888;&#65039; {{ lbl }}</code>
+          {% else %}
+            <code title="Predicted, and already applied to the page" style="opacity: 0.7;">&#10003; {{ lbl }}</code>
+          {% endif %}
+          {% if not loop.last %} {% endif %}
+        {% else %}&mdash;{% endfor %}
+      </td>
+      <td>{% for lbl in p.applied_labels %}<code>{{ lbl }}</code>{% if not loop.last %} {% endif %}{% else %}&mdash;{% endfor %}</td>
+      <td>
+        {% if p.depends_on_page_ids %}
+          {% for dep_id in p.depends_on_page_ids %}
+            {% set dep = pages|selectattr("page_id", "equalto", dep_id)|first %}
+            {% if dep %}<a href="{{ dep.page_url }}" target="_blank" rel="noopener">{{ dep.page_title }}</a>{% else %}{{ dep_id }}{% endif %}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+          {% if p.dependency_rationale %}<div class="hint">{{ p.dependency_rationale_html | safe }}</div>{% endif %}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </td>
+      <td>
+        {% if p.blocks_page_ids %}
+          {% for blocked_id in p.blocks_page_ids %}
+            {% set blocked = pages|selectattr("page_id", "equalto", blocked_id)|first %}
+            {% if blocked %}<a href="{{ blocked.page_url }}" target="_blank" rel="noopener">{{ blocked.page_title }}</a>{% else %}{{ blocked_id }}{% endif %}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          &mdash;
+        {% endif %}
+      </td>
+      <td>
+        {% if p.jira_issue_key %}
+          <a href="{{ p.jira_issue_url }}" target="_blank" rel="noopener">{{ p.jira_issue_key }}</a>
+        {% else %}
+          &mdash;
+        {% endif %}
+      </td>
+      <td><span class="badge badge-no_repo_matched">{{ p.phase }}</span></td>
+      <td>
+        {% if p.phase == "confirmed" %}
+        <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/pages/{{ p.page_id }}/approve"
+              onsubmit="if (!confirm('Move {{ p.jira_issue_key }} to {{ approved_status_name|default('the approved status', true) }}?')) return false; this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Approving…'; return true;">
+          <button type="submit" style="padding: 0.4rem 1rem; font-size: 0.8rem;">Approve</button>
+        </form>
+        {% elif p.phase == "approved" %}
+          <span class="hint">Waiting on pipeline/sprint_runner.py</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if not approved_status_name %}
+<div class="banner" style="background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); margin-top: 1rem;">
+  No pages here can be approved yet: set
+  <a href="/ui/config#JIRA_APPROVED_STATUS_NAME"><strong>Approved status name</strong></a>
+  under Jira in Configuration first -- it's the exact Jira workflow status (e.g. "Approved") that
+  Approve transitions a story to.
+</div>
+{% endif %}
+
+<script>
+  // Client-side pagination, purely for readability on a long sprint (15-20+
+  // stories) -- every row (and its checkbox) stays in the DOM regardless of
+  // which page is showing, so "Select all" and a batch Approve submission
+  // always cover the WHOLE list, not just whatever page happens to be
+  // visible. Rows-per-page is fixed rather than user-configurable to keep
+  // this simple; raise PAGE_SIZE if a sprint regularly runs much larger.
+  (function () {
+    var PAGE_SIZE = 10;
+    var rows = Array.prototype.slice.call(document.querySelectorAll("#stories-table tbody tr"));
+    var totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (totalPages <= 1) return; // nothing to paginate -- leave every row visible, no controls shown
+
+    var current = 0;
+    var controls = document.getElementById("pager-controls");
+    var status = document.getElementById("pager-status");
+    var prevBtn = document.getElementById("pager-prev");
+    var nextBtn = document.getElementById("pager-next");
+
+    function render() {
+      rows.forEach(function (row, i) {
+        row.style.display = (i >= current * PAGE_SIZE && i < (current + 1) * PAGE_SIZE) ? "" : "none";
+      });
+      status.textContent = "Page " + (current + 1) + " of " + totalPages + " (" + rows.length + " total)";
+      prevBtn.disabled = current === 0;
+      nextBtn.disabled = current === totalPages - 1;
+    }
+
+    prevBtn.addEventListener("click", function () { if (current > 0) { current -= 1; render(); } });
+    nextBtn.addEventListener("click", function () { if (current < totalPages - 1) { current += 1; render(); } });
+
+    controls.style.display = "flex";
+    render();
+  })();
+</script>
+{% endblock %}

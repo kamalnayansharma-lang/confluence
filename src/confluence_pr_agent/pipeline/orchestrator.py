@@ -39,10 +39,11 @@ from pathlib import Path
 
 from confluence_pr_agent.agent.base import ChangeEngine
 from confluence_pr_agent.agent.factory import build_change_engine
-from confluence_pr_agent.agent.prompts import build_repo_context
+from confluence_pr_agent.agent.prompts import build_repo_context, build_single_repo_context
 from confluence_pr_agent.config import Settings, get_process_config, get_settings
 from confluence_pr_agent.confluence.client import ConfluenceClient
-from confluence_pr_agent.confluence.diff import compute_diff
+from confluence_pr_agent.confluence.diff import _to_plain_text, compute_diff
+from confluence_pr_agent.confluence.related_context import gather_related_context
 from confluence_pr_agent.jira.client import JiraClient
 from confluence_pr_agent.jira.story_writer import generate_story_content
 from confluence_pr_agent.judge.base import ChangeJudge
@@ -67,6 +68,7 @@ from confluence_pr_agent.pipeline.stages import STAGE_KEYS
 from confluence_pr_agent.repo.git_client import GitClient
 from confluence_pr_agent.repo.github_client import GitHubClient
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
+from confluence_pr_agent.storage.pending_approval_store import PendingApproval, PendingApprovalStore
 from confluence_pr_agent.storage.run_store import RunStore
 from confluence_pr_agent.testing.test_runner import run_tests
 
@@ -215,6 +217,7 @@ class PipelineDeps:
     run_store: RunStore
     judge: ChangeJudge
     jira: JiraClient
+    pending_approvals: PendingApprovalStore
 
 
 def _build_email_client(settings: Settings) -> EmailClient:
@@ -261,6 +264,7 @@ def build_deps(settings: Settings | None = None) -> PipelineDeps:
             email=settings.jira_user_email,
             api_token=settings.jira_api_token,
         ),
+        pending_approvals=PendingApprovalStore(settings.pending_approvals_store_path),
     )
 
 
@@ -417,7 +421,23 @@ async def _finalize_repo(
         )
 
 
-async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bool = False) -> PipelineResult:
+async def run_pipeline(
+    page_id: str,
+    deps: PipelineDeps | None = None,
+    force: bool = False,
+    resume: PendingApproval | None = None,
+) -> PipelineResult:
+    """`resume`, when set (only ever passed by pipeline/approval_poller.py),
+    skips fetch/label-gate/diff-computation/story-creation entirely and
+    jumps straight to repo-routing + implementation using the exact
+    already-approved diff/story recorded in `resume` -- see
+    storage/pending_approval_store.py. This is what JIRA_APPROVAL_REQUIRED's
+    "implement only what was actually reviewed" guarantee rests on: a
+    resumed run never re-fetches or re-diffs the live page, so a spec edit
+    that happened after approval can't silently sneak into what gets
+    implemented (approval_poller.py detects that case separately and flags
+    it for re-review instead of resuming).
+    """
     owns_deps = deps is None
     deps = deps or build_deps()
     settings = deps.settings
@@ -574,7 +594,21 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
         )
         return result
 
-    try:
+    async def _fetch_diff_and_story() -> tuple[PageSnapshot, PageDiff, dict | None, JiraIssueResult | None, bool] | PipelineResult:
+        """Fetch -> label-gate -> diff -> Jira story creation/reuse, exactly
+        today's prologue -- extracted verbatim (via `nonlocal jira_issue,
+        jira_reused` below, so every line of the original body is
+        unchanged) so run_pipeline can skip this entirely on a resumed run
+        -- see the `resume` param's docstring above. Reuses the SAME
+        mark_stage/finish closures either way, since this is still nested
+        inside run_pipeline.
+
+        Returns a terminal PipelineResult for the two early-exit cases
+        (ignored / no_change_detected) -- the caller `await finish(...)`s
+        it, same as every other terminal result in this function -- or the
+        happy-path tuple otherwise.
+        """
+        nonlocal jira_issue, jira_reused
         page = await deps.confluence.fetch_page(page_id)
         progress["page"] = page
 
@@ -588,12 +622,10 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
                     sorted(page_labels),
                     allowed_labels,
                 )
-                return await finish(
-                    PipelineResult(
-                        status="ignored",
-                        page=page,
-                        error=f"Page has none of the required labels: {', '.join(allowed_labels)}",
-                    )
+                return PipelineResult(
+                    status="ignored",
+                    page=page,
+                    error=f"Page has none of the required labels: {', '.join(allowed_labels)}",
                 )
 
         diff = compute_diff(deps.store, page, force=force)
@@ -608,13 +640,27 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
                 )
             else:
                 logger.info("No version change for page %s (still v%s); skipping.", page_id, page.version)
-            return await finish(PipelineResult(status="no_change_detected", page=page, diff=diff))
+            return PipelineResult(status="no_change_detected", page=page, diff=diff)
 
         logger.info(
             "Detected change on page %s: v%s -> v%s", page_id, diff.previous_version, page.version
         )
 
         previous_page = deps.store.get(page_id)
+
+        # Enrich the diff once, up front, so both the Jira story (below) and
+        # the coding agent's own prompt (much later) see the same context --
+        # see models.py's PageDiff.related_context/standards_text docstrings.
+        # Both are best-effort: neither can fail this run, only degrade to
+        # None (confluence/related_context.py handles its own try/except;
+        # the standards-page fetch below is wrapped the same way).
+        if settings.standards_confluence_page_id.strip():
+            try:
+                standards_page = await deps.confluence.fetch_page(settings.standards_confluence_page_id.strip())
+                diff.standards_text = _to_plain_text(standards_page.body_html)
+            except Exception as exc:
+                logger.warning("Could not fetch standards page %s: %s", settings.standards_confluence_page_id, exc)
+        diff.related_context = await gather_related_context(deps.confluence, settings.confluence_space_key, page)
 
         # Create the Jira story before any code is touched (the story is
         # about the spec change, not the eventual implementation -- see
@@ -729,6 +775,74 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
                 # success further down.
                 deps.store.remember_jira_issue(page_id, jira_issue.key)
 
+        return (page, diff, previous_page, jira_issue, jira_reused)
+
+    try:
+        if resume is None:
+            prologue = await _fetch_diff_and_story()
+            if isinstance(prologue, PipelineResult):
+                return await finish(prologue)
+            page, diff, previous_page, jira_issue, jira_reused = prologue
+        else:
+            # Resuming after JIRA_APPROVAL_REQUIRED approval -- reconstruct
+            # exactly what was reviewed, from PendingApprovalStore, instead
+            # of re-fetching/re-diffing the live page (see this function's
+            # docstring for why that binding matters). previous_page still
+            # comes from a fresh PageStore read: it's independent of
+            # approval state and needed for PR-branch-reuse info below.
+            page = PageSnapshot(
+                page_id=resume["page_id"],
+                title=resume["page_title"],
+                version=resume["page_version"],
+                body_html=resume["page_body_html"],
+                url=resume["page_url"],
+                labels=resume["page_labels"],
+            )
+            progress["page"] = page
+            diff = PageDiff(
+                page=page,
+                previous_version=resume["previous_version"],
+                diff_text=resume["diff_text"],
+                is_first_seen=resume["is_first_seen"],
+                body_checksum=resume["body_checksum"],
+            )
+            previous_page = deps.store.get(page_id)
+            jira_issue = JiraIssueResult(key=resume["jira_issue_key"], url=resume["jira_issue_url"])
+            jira_reused = True
+
+        if settings.jira_approval_required and resume is None and jira_issue is not None:
+            # Story now exists -- stop here instead of continuing into
+            # cloning/implementation. pipeline/approval_poller.py is what
+            # resumes this (see this function's `resume` param docstring).
+            deps.pending_approvals.put(
+                {
+                    "page_id": page.page_id,
+                    "jira_issue_key": jira_issue.key,
+                    "jira_issue_url": jira_issue.url,
+                    "previous_version": diff.previous_version,
+                    "diff_text": diff.diff_text,
+                    "is_first_seen": diff.is_first_seen,
+                    "body_checksum": diff.body_checksum,
+                    "page_version": page.version,
+                    "page_body_checksum": diff.body_checksum,
+                    "page_title": page.title,
+                    "page_url": page.url,
+                    "page_body_html": page.body_html,
+                    "page_labels": page.labels,
+                    "run_id": run_id,
+                    "created_at": started_at.isoformat(),
+                }
+            )
+            logger.info(
+                "Page %s: JIRA_APPROVAL_REQUIRED is on -- waiting for %s to reach status %r before implementing.",
+                page_id, jira_issue.key, settings.jira_approved_status_name,
+            )
+            return await finish(
+                PipelineResult(
+                    status="awaiting_approval", page=page, diff=diff, jira_issue=jira_issue, jira_reused=jira_reused,
+                )
+            )
+
         # Which repo(s) is this change actually for -- see config.py's
         # resolved_repo_targets docstring for the label-matching semantics
         # (empty label = matches every page, same as CONFLUENCE_ALLOWED_
@@ -776,7 +890,16 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
         if is_multi_repo:
             in_scope_names = {rt.target_repo for rt in in_scope}
             out_of_scope = [rt for rt in repo_targets if rt.target_repo not in in_scope_names]
-            diff.repo_context = build_repo_context(in_scope, repo_dirs, workspace, out_of_scope)
+            diff.repo_context = build_repo_context(
+                in_scope, repo_dirs, workspace, out_of_scope, global_coding_standards=settings.coding_standards
+            )
+        elif len(in_scope) == 1:
+            # Single-repo run -- no "which repos are checked out" framing
+            # needed (there's only ever one), but tech_stack/coding_standards
+            # on that one RepoTarget still deserve a prompt line if set. See
+            # agent/prompts.py::build_single_repo_context's docstring for why
+            # this stays None (today's behavior) when neither is configured.
+            diff.repo_context = build_single_repo_context(in_scope[0], settings.coding_standards)
 
         # Self-correction loop: give the change engine up to N attempts,
         # feeding back the previous attempt's test failures (across every
@@ -837,6 +960,30 @@ async def run_pipeline(page_id: str, deps: PipelineDeps | None = None, force: bo
                     f"{_repo_slug(target_repo)}/{f}" if is_multi_repo else f for f in files
                 )
                 repo_tests[target_repo] = await run_tests(repo_dir, rt.test_command)
+                # Lint gate: only run once tests already passed (no point
+                # linting code that's about to get rewritten by a retry
+                # anyway), same pass/fail semantics and the exact same
+                # retry loop below -- a lint failure feeds back into
+                # retry_context precisely like a test failure would.
+                if repo_tests[target_repo].passed and rt.lint_command:
+                    lint_result = await run_tests(repo_dir, rt.lint_command)
+                    if lint_result.crashed:
+                        # Fails OPEN, unlike a real lint failure below --
+                        # lint_command is optional, and a malformed/typo'd
+                        # command is a config problem, not evidence the
+                        # code is wrong. Blocking an otherwise-correct,
+                        # tested PR over that would be worse than just
+                        # skipping the gate and logging it.
+                        logger.warning(
+                            "Lint command for %s could not be run (%s); skipping the lint gate for this run: %s",
+                            target_repo, rt.lint_command, lint_result.output,
+                        )
+                    elif not lint_result.passed:
+                        repo_tests[target_repo] = RepoTestResult(
+                            passed=False,
+                            output=repo_tests[target_repo].output + "\n\n$ (lint)\n" + lint_result.output,
+                            command=f"{rt.test_command} && {rt.lint_command}",
+                        )
             change.files_changed = all_changed_files
 
             if all(t.passed for t in repo_tests.values()):

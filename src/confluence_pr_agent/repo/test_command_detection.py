@@ -34,3 +34,28 @@ def detect_test_command(root_files: list[str]) -> str | None:
         if marker in names:
             return command
     return None
+
+
+# Same marker-file idiom as _MARKERS above, for prefilling RepoTarget.
+# tech_stack (config.py / ui/config.html) instead of test_command. Order
+# matters the same way -- first match wins.
+_STACK_MARKERS: list[tuple[str, str]] = [
+    ("pom.xml", "Java + Maven"),
+    ("build.gradle", "Java/Kotlin + Gradle"),
+    ("build.gradle.kts", "Kotlin + Gradle"),
+    ("go.mod", "Go"),
+    ("Cargo.toml", "Rust"),
+    ("package.json", "Node.js"),
+    ("pyproject.toml", "Python"),
+    ("requirements.txt", "Python"),
+    ("setup.py", "Python"),
+    ("Gemfile", "Ruby"),
+]
+
+
+def detect_tech_stack(root_files: list[str]) -> str | None:
+    names = set(root_files)
+    for marker, stack in _STACK_MARKERS:
+        if marker in names:
+            return stack
+    return None

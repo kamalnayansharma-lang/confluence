@@ -14,6 +14,7 @@ Which one runs is a single config value: `CHANGE_AGENT_ENGINE` in `.env`
 | `codex` | `codex` | `npm install -g @openai/codex` (Node 22+) | `OPENAI_API_KEY` |
 | `gemini` | `gemini` | `npm install -g @google/gemini-cli` (Node 18+) | `GEMINI_API_KEY` |
 | `antigravity` | `agy` | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | none — OAuth only, see below |
+| `kiro` | `kiro-cli` | `curl -fsSL https://cli.kiro.dev/install \| bash` | `KIRO_API_KEY` |
 
 Only the engine you've selected needs its CLI installed and credential set —
 `scripts/check_credentials.py` checks the CLI for whichever engine is
@@ -40,6 +41,7 @@ non-interactively and parse its output:
     of the JSON-lines event stream on stdout)
   - `gemini`: `gemini -p "<prompt>" --yolo --output-format json`
   - `antigravity`: `agy -p "<prompt>" --dangerously-skip-permissions --output-format json`
+  - `kiro`: `kiro-cli chat --no-interactive --trust-all-tools "<prompt>"`
 
 None of these CLIs expose a native "max agentic turns" concept the way the
 Claude Agent SDK does (Gemini CLI has one, `maxSessionTurns`, but it's a
@@ -62,6 +64,21 @@ interactively once (on the host, or inside the container with a TTY
 attached), then headless runs reuse those cached credentials. In Podman,
 that means mounting whatever directory `agy login` writes credentials to as
 a volume, rather than relying on `.env`.
+
+## `kiro` flags are documented, not live-verified
+
+Every other engine's exact invocation in this file was confirmed against a
+real run of that CLI. `kiro-cli`'s flags (`chat --no-interactive
+--trust-all-tools`) and env var (`KIRO_API_KEY`) are sourced from Kiro's own
+published headless-mode docs (kiro.dev/docs/cli/headless,
+kiro.dev/changelog/cli/2-0) instead, since no local install was available to
+test against. No JSON output format or usage/cost field is documented for
+headless mode either, so `KiroCliEngine` treats stdout as the plain response
+text and always reports `usage=None` — same "engine didn't report anything
+parseable" convention used when Cursor's own JSON stats field is absent. If
+this engine fails outright on first real use, check `kiro-cli chat --help`
+against what `agent/engines/kiro_cli.py` actually sends before assuming the
+change itself is broken.
 
 ## Adding another engine
 

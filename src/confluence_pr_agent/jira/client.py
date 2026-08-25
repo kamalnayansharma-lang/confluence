@@ -97,6 +97,62 @@ class JiraClient:
         )
         resp.raise_for_status()
 
+    async def get_transitions(self, issue_key: str) -> list[dict]:
+        """Raw transition objects ({"id": ..., "name": ..., "to": {...}}) --
+        Jira workflow transitions are project/workflow-specific IDs, not
+        fixed strings, so a name has to be resolved through this call before
+        it can be POSTed. See transition_issue below, and
+        pipeline/approval_poller.py / ui/plan_sprint.py's Approve action for
+        callers.
+        """
+        resp = await self._client.get(
+            f"{self._base_url}/rest/api/{API_VERSION}/issue/{issue_key}/transitions", auth=self._auth
+        )
+        resp.raise_for_status()
+        return resp.json().get("transitions", [])
+
+    async def transition_issue(self, issue_key: str, transition_name: str) -> bool:
+        """Moves `issue_key` through the transition whose name matches
+        `transition_name` (case-insensitive), if one is available from its
+        current status. Returns False (does nothing) rather than raising
+        when no matching transition exists -- a workflow that doesn't offer
+        this exact transition from the issue's current state is a
+        configuration mismatch the caller should surface as "couldn't
+        approve", not a hard error that looks like a network/auth failure.
+        """
+        transitions = await self.get_transitions(issue_key)
+        target = next(
+            (t for t in transitions if t.get("name", "").strip().lower() == transition_name.strip().lower()), None
+        )
+        if target is None:
+            return False
+        resp = await self._client.post(
+            f"{self._base_url}/rest/api/{API_VERSION}/issue/{issue_key}/transitions",
+            auth=self._auth,
+            json={"transition": {"id": target["id"]}},
+        )
+        resp.raise_for_status()
+        return True
+
+    async def link_issues(self, from_key: str, to_key: str, link_type: str = "Blocks") -> None:
+        """Creates a `from_key` {link_type} `to_key` issue link -- e.g.
+        link_type="Blocks" makes from_key block to_key. Used by the sprint
+        planner (jira/sprint_planner.py) to write the dependency order it
+        derived as real Jira issue links, not just internal state --
+        `link_type` must be a link-type name that exists in this Jira
+        instance (Jira ships "Blocks" by default).
+        """
+        resp = await self._client.post(
+            f"{self._base_url}/rest/api/{API_VERSION}/issueLink",
+            auth=self._auth,
+            json={
+                "type": {"name": link_type},
+                "inwardIssue": {"key": from_key},
+                "outwardIssue": {"key": to_key},
+            },
+        )
+        resp.raise_for_status()
+
     async def get_issue_status(self, issue_key: str) -> JiraIssueStatus:
         """Fetched fresh each run (not trusted from the page store's cached
         jira_issue_key alone) so a story someone closed/completed is always

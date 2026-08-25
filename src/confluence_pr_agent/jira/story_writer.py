@@ -71,6 +71,11 @@ class JiraStoryContent:
 
 def build_prompt(diff: PageDiff) -> str:
     header = f"Confluence spec page: {diff.page.title}\nPage URL: {diff.page.url}\n\n"
+    if diff.related_context:
+        header += (
+            "Related prior work from other Confluence pages, for context only -- do not treat this "
+            "as part of the current spec change, it's background:\n\n" + diff.related_context + "\n\n"
+        )
     if diff.is_first_seen:
         body = (
             "This is the first time this page has been processed. Below is the full current "

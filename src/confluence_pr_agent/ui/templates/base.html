@@ -347,6 +347,7 @@
   .badge-no_change_detected { background: var(--neutral-bg); color: var(--neutral-text); }
   .badge-ignored { background: var(--neutral-bg); color: var(--neutral-text); }
   .badge-no_repo_matched { background: var(--neutral-bg); color: var(--neutral-text); }
+  .badge-awaiting_approval { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
   .badge-no_changes { background: var(--neutral-bg); color: var(--neutral-text); }
   .badge-warning { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
   .badge-running {
@@ -476,6 +477,7 @@
         <a href="/ui/how-it-works" class="{{ 'active' if request.url.path == '/ui/how-it-works' else '' }}">How It Works</a>
         <a href="/ui/runs" class="{{ 'active' if request.url.path == '/ui/runs' else '' }}">Pipeline Runs</a>
         <a href="/ui/simulate" class="{{ 'active' if request.url.path == '/ui/simulate' else '' }}">Simulate Webhook</a>
+        <a href="/ui/plan-sprint" class="{{ 'active' if request.url.path.startswith('/ui/plan-sprint') else '' }}">Plan a Sprint</a>
         <a href="/ui/config" class="{{ 'active' if request.url.path == '/ui/config' else '' }}">Configuration</a>
         <!-- request.state.username is set by ui/auth.py::current_username --
              every /ui/* route depends on it, so it's always present here.

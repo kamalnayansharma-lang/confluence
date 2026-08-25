@@ -12,8 +12,11 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from confluence_pr_agent.config import get_process_config, get_settings
+from confluence_pr_agent.pipeline.approval_poller import approval_poll_scan_loop
 from confluence_pr_agent.pipeline.orchestrator import run_pipeline
 from confluence_pr_agent.pipeline.poller import poll_scan_loop
+from confluence_pr_agent.pipeline.sprint_runner import sprint_runner_scan_loop
+from confluence_pr_agent.ui.plan_sprint import router as plan_sprint_router
 from confluence_pr_agent.ui.routes import router as ui_router
 from confluence_pr_agent.webhook.schemas import extract_event_type, extract_page_id
 
@@ -30,12 +33,19 @@ async def lifespan(app: FastAPI):
     # with polling enabled) is cheap: one directory scan every 30s.
     logger.info("Starting the per-user Confluence poll scan loop")
     poll_task = asyncio.create_task(poll_scan_loop())
+    logger.info("Starting the per-user JIRA_APPROVAL_REQUIRED scan loop")
+    approval_task = asyncio.create_task(approval_poll_scan_loop())
+    logger.info("Starting the per-user sprint runner scan loop")
+    sprint_task = asyncio.create_task(sprint_runner_scan_loop())
     yield
     poll_task.cancel()
-    try:
-        await poll_task
-    except asyncio.CancelledError:
-        pass
+    approval_task.cancel()
+    sprint_task.cancel()
+    for task in (poll_task, approval_task, sprint_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -44,6 +54,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(ui_router)
+app.include_router(plan_sprint_router)
 
 
 @app.get("/")

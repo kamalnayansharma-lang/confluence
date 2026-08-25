@@ -43,6 +43,17 @@ class PageDiff:
     # ChangeEngine.implement_change so every engine implementation (already
     # taking `diff` unchanged) needs no signature change at all.
     repo_context: str | None = None
+    # Plain-text content of the pinned org-wide standards page
+    # (Settings.standards_confluence_page_id), fetched once per run in
+    # pipeline/orchestrator.py the same way repo_context is precomputed
+    # above -- kept here rather than re-fetched inside prompt-building so
+    # every ChangeEngine implementation still takes `diff` unchanged.
+    standards_text: str | None = None
+    # Bounded "related prior work" context assembled by
+    # jira/story_writer.py::_gather_related_context from other Confluence
+    # pages (explicit in-body links first, a title keyword search as
+    # fallback) -- title + short excerpt per related page, not full bodies.
+    related_context: str | None = None
 
 
 @dataclass
@@ -65,6 +76,16 @@ class RepoTestResult:
     passed: bool
     output: str
     command: str
+    # True when `command` itself couldn't even be run -- malformed shell
+    # quoting, or its binary isn't on PATH -- as distinct from `passed=False`
+    # meaning the command ran and genuinely failed. See
+    # testing/test_runner.py::run_tests for where this gets set, and
+    # pipeline/orchestrator.py for why it matters: an unusable test_command
+    # still correctly fails the run either way, but an unusable
+    # lint_command (optional) fails OPEN when this is True, instead of
+    # blocking a PR over what's actually a config typo, not a real lint
+    # violation.
+    crashed: bool = False
 
 
 @dataclass
@@ -117,6 +138,22 @@ class RepoTarget:
     base_branch: str
     test_command: str
     label: str = ""
+    # Free-text stack description (e.g. "Python 3.12 + FastAPI"), surfaced to
+    # the change engine so a genuinely empty/near-empty repo has something to
+    # scaffold against instead of guessing -- see agent/prompts.py. Detected
+    # (not required) from the repo's root files by
+    # repo/test_command_detection.py::detect_tech_stack, same "prefill once
+    # in the UI, don't re-guess per run" idiom as test_command already uses.
+    tech_stack: str = ""
+    # Free-text conventions specific to this repo (naming, layout, patterns
+    # to prefer/avoid) -- folds into the same prompt section as tech_stack.
+    # Settings.coding_standards (config.py) is a global fallback used when
+    # this is blank.
+    coding_standards: str = ""
+    # Optional. Run after test_command passes, same pass/fail gate, same
+    # self-correction retry loop -- see pipeline/orchestrator.py. Blank
+    # (default) means no lint step at all for this repo.
+    lint_command: str = ""
 
 
 @dataclass

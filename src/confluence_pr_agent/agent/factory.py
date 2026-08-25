@@ -9,7 +9,7 @@ from __future__ import annotations
 from confluence_pr_agent.agent.base import ChangeEngine
 from confluence_pr_agent.config import Settings
 
-_ENGINES = ("claude_code", "cursor", "copilot", "codex", "gemini", "antigravity")
+_ENGINES = ("claude_code", "cursor", "copilot", "codex", "gemini", "antigravity", "kiro")
 
 
 def build_change_engine(settings: Settings) -> ChangeEngine:
@@ -44,5 +44,10 @@ def build_change_engine(settings: Settings) -> ChangeEngine:
         from confluence_pr_agent.agent.engines.antigravity_cli import AntigravityCliEngine
 
         return AntigravityCliEngine()
+
+    if normalized == "kiro":
+        from confluence_pr_agent.agent.engines.kiro_cli import KiroCliEngine
+
+        return KiroCliEngine(api_key=settings.kiro_api_key)
 
     raise ValueError(f"Unknown CHANGE_AGENT_ENGINE '{settings.change_agent_engine}' -- expected one of {_ENGINES}")

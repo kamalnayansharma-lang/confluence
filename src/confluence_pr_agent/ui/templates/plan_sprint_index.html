@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Plan a Sprint</h1>
+<p class="subtitle">
+  Give a sprint label. Every page carrying both your gate label
+  {% if gate_labels %}(<code>{{ gate_labels[0] }}</code>){% else %}(none configured -- every page is eligible){% endif %}
+  and that sprint label gets planned together: predicted repo(s) per page, any missing routing labels
+  flagged before anything is implemented, and a proposed implementation order from inferred dependencies.
+</p>
+
+{% if error %}
+<div class="banner" style="background: var(--error-bg); border-color: var(--error-border); color: var(--error-text);">
+  {{ error }}
+</div>
+{% endif %}
+
+{% if not approved_status_name %}
+<div class="banner" style="background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text);">
+  Heads up: <a href="/ui/config#JIRA_APPROVED_STATUS_NAME"><strong>Approved status name</strong></a> isn't set
+  under Jira in Configuration yet -- you can Plan and Confirm without it, but no page can be Approved
+  until it is.
+</div>
+{% endif %}
+
+<fieldset>
+  <legend>New plan</legend>
+  <form method="post" action="/ui/plan-sprint/plan" class="filter-bar" id="plan-form">
+    <div class="filter-field" style="flex: 1 1 240px;">
+      <label for="sprint_tag">Sprint label</label>
+      <input type="text" name="sprint_tag" id="sprint_tag" placeholder="sprint-24" required>
+    </div>
+    <div class="filter-field filter-actions">
+      <button type="submit" id="plan-submit-btn">Plan</button>
+      <span class="hint" id="plan-status" style="display: none; margin-left: 0.5rem;">
+        &#9203; Searching Confluence and planning&hellip; this calls an LLM once per batch, can take a bit.
+      </span>
+    </div>
+  </form>
+</fieldset>
+<script>
+  document.getElementById("plan-form").addEventListener("submit", function () {
+    document.getElementById("plan-submit-btn").disabled = true;
+    document.getElementById("plan-submit-btn").textContent = "Planning…";
+    document.getElementById("plan-status").style.display = "inline";
+  });
+</script>
+
+{% if plans %}
+<fieldset style="margin-top: 1.5rem;">
+  <legend>Existing plans</legend>
+  <table>
+    <thead>
+      <tr>
+        <th>Sprint</th>
+        <th>Created</th>
+        <th>Pages</th>
+        <th>Phases</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for plan in plans %}
+      <tr>
+        <td><a href="/ui/plan-sprint/{{ plan.sprint_tag }}">{{ plan.sprint_tag }}</a></td>
+        <td>{{ plan.created_at.split("T")[0] }}</td>
+        <td>{{ plan.pages|length }}</td>
+        <td>
+          {% set phases = plan.pages|map(attribute="phase")|list %}
+          {% for phase in ["planned", "confirmed", "approved", "in_progress", "waiting_on_merge", "done"] %}
+            {% set count = phases|select("equalto", phase)|list|length %}
+            {% if count %}<span class="badge badge-no_repo_matched">{{ count }} {{ phase }}</span>{% endif %}
+          {% endfor %}
+        </td>
+        <td><a href="/ui/plan-sprint/{{ plan.sprint_tag }}">View &rarr;</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</fieldset>
+{% endif %}
+{% endblock %}

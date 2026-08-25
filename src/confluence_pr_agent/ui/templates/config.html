@@ -12,8 +12,8 @@
 
   .repolist-rows { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.35rem; }
   .repolist-row {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1.4fr 1fr auto;
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     align-items: start;
     background: var(--bg);
@@ -21,13 +21,14 @@
     border-radius: 8px;
     padding: 0.65rem;
   }
+  .repolist-row > div { flex: 1 1 150px; min-width: 150px; }
   .repolist-row label {
     margin-top: 0;
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .repolist-row input { margin-top: 0.2rem; font-size: 0.85rem; }
+  .repolist-row input { margin-top: 0.2rem; font-size: 0.85rem; width: 100%; }
   .repolist-row .repolist-test-command-wrap { display: flex; gap: 0.3rem; align-items: flex-end; }
   .repolist-row .repolist-test-command-wrap input { flex: 1; }
   .repolist-detect-btn {
@@ -39,11 +40,9 @@
   .repolist-remove-btn {
     align-self: end;
     margin-top: 0.2rem;
+    flex: 0 0 auto;
   }
   .repolist-remove-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-  @media (max-width: 900px) {
-    .repolist-row { grid-template-columns: 1fr 1fr; }
-  }
 
   .test-connection { display: flex; align-items: center; gap: 0.65rem; margin: 0.9rem 0 0.4rem; }
   .test-connection-status { margin-top: 0; }
@@ -364,8 +363,14 @@
         try {
           const resp = await fetch("/ui/repos/detect-test-command?repo=" + encodeURIComponent(repoValue.trim()));
           const data = await resp.json();
-          if (data.test_command) {
-            updateRow(index, { test_command: data.test_command });
+          const patch = {};
+          if (data.test_command) patch.test_command = data.test_command;
+          // Only fill tech_stack if the row doesn't already have one -- this
+          // fires on repo blur, which can happen after a user already typed
+          // a stack by hand.
+          if (data.tech_stack && !getRows()[index].tech_stack) patch.tech_stack = data.tech_stack;
+          if (Object.keys(patch).length) {
+            updateRow(index, patch);
             statusEl.textContent = "Detected from the repo.";
           } else {
             statusEl.textContent = "Couldn't detect one — set it by hand.";
@@ -437,6 +442,35 @@
           labelInput.addEventListener("change", () => updateRow(index, { label: labelInput.value.trim() }));
           labelField.appendChild(labelInput);
 
+          const stackField = document.createElement("div");
+          stackField.innerHTML = '<label>Tech stack</label>';
+          const stackInput = document.createElement("input");
+          stackInput.type = "text";
+          stackInput.placeholder = "e.g. Python 3.12 + FastAPI";
+          stackInput.title = "Told to the change engine explicitly -- matters most for a repo that's empty or near-empty, where there's no existing code to infer conventions from.";
+          stackInput.value = row.tech_stack || "";
+          stackInput.addEventListener("change", () => updateRow(index, { tech_stack: stackInput.value.trim() }));
+          stackField.appendChild(stackInput);
+
+          const standardsField = document.createElement("div");
+          standardsField.innerHTML = '<label>Coding standards (this repo)</label>';
+          const standardsInput = document.createElement("input");
+          standardsInput.type = "text";
+          standardsInput.placeholder = "(blank = use the global fallback below)";
+          standardsInput.value = row.coding_standards || "";
+          standardsInput.addEventListener("change", () => updateRow(index, { coding_standards: standardsInput.value.trim() }));
+          standardsField.appendChild(standardsInput);
+
+          const lintField = document.createElement("div");
+          lintField.innerHTML = '<label>Lint command (optional)</label>';
+          const lintInput = document.createElement("input");
+          lintInput.type = "text";
+          lintInput.placeholder = "e.g. ruff check .";
+          lintInput.title = "Runs after tests pass, same pass/fail gate and retry loop as the test command. Blank = no lint step.";
+          lintInput.value = row.lint_command || "";
+          lintInput.addEventListener("change", () => updateRow(index, { lint_command: lintInput.value.trim() }));
+          lintField.appendChild(lintInput);
+
           const removeBtn = document.createElement("button");
           removeBtn.type = "button";
           removeBtn.className = "btn-danger repolist-remove-btn";
@@ -452,13 +486,16 @@
           rowEl.appendChild(branchField);
           rowEl.appendChild(testField);
           rowEl.appendChild(labelField);
+          rowEl.appendChild(stackField);
+          rowEl.appendChild(standardsField);
+          rowEl.appendChild(lintField);
           rowEl.appendChild(removeBtn);
           rowsEl.appendChild(rowEl);
         });
       }
 
       addBtn.addEventListener("click", () => {
-        setRows([...getRows(), { target_repo: "", base_branch: "main", test_command: "", label: "" }]);
+        setRows([...getRows(), { target_repo: "", base_branch: "main", test_command: "", label: "", tech_stack: "", coding_standards: "", lint_command: "" }]);
       });
 
       // Same hook the "Load from .env file" picker uses for the taglist

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from confluence_pr_agent.confluence.diff import _to_plain_text, compute_checksum, compute_diff
+from confluence_pr_agent.confluence.diff import _to_plain_text, build_full_spec_diff, compute_checksum, compute_diff
 from confluence_pr_agent.models import PageSnapshot
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
 
@@ -53,6 +53,26 @@ def test_unchanged_version_produces_empty_diff(tmp_path):
     assert diff.is_first_seen is False
     assert diff.diff_text == ""
     assert diff.content_unchanged is False  # short-circuited on version match, not checksum
+
+
+def test_full_spec_diff_never_empty_even_for_an_already_processed_page(tmp_path):
+    """Regression test for the real bug found in Plan a Sprint: reusing
+    compute_diff for planning gave the planner an EMPTY diff_text for any
+    page the regular pipeline had already processed (see the sibling
+    test_unchanged_version_produces_empty_diff above -- that's correct for
+    the main pipeline's dedup guard, wrong for planning). build_full_spec_diff
+    must always return the page's actual current content, regardless of
+    PageStore state -- it doesn't even take a store argument.
+    """
+    page = _page(1, "<p>Checkout must support credit card payments.</p>")
+
+    diff = build_full_spec_diff(page)
+
+    assert diff.is_first_seen is True
+    assert diff.previous_version is None
+    assert "credit card" in diff.diff_text
+    assert diff.diff_text != ""
+    assert diff.body_checksum == _checksum_for(page.body_html)
 
 
 def test_changed_version_produces_unified_diff(tmp_path):

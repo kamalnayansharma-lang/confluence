@@ -31,7 +31,7 @@ from confluence_pr_agent.jira.client import JiraClient
 from confluence_pr_agent.pipeline.poller import poll_once, retrigger_page
 from confluence_pr_agent.pipeline.stages import STAGE_LABELS
 from confluence_pr_agent.repo.github_client import GitHubClient
-from confluence_pr_agent.repo.test_command_detection import detect_test_command
+from confluence_pr_agent.repo.test_command_detection import detect_tech_stack, detect_test_command
 from confluence_pr_agent.storage.run_store import RunStore
 from confluence_pr_agent.ui.auth import current_username
 from confluence_pr_agent.ui.config_fields import (
@@ -54,7 +54,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # limited to outcomes that happen to have occurred yet.
 ALL_STATUSES = [
     "running", "opened_pr", "tests_failed", "judge_rejected", "error", "no_change_detected", "ignored",
-    "no_repo_matched",
+    "no_repo_matched", "awaiting_approval",
 ]
 
 STATUS_LABELS = {
@@ -71,6 +71,11 @@ STATUS_LABELS = {
     # gate, a page never even considered) and from "no_changes" below (a
     # per-repo outcome, not a whole-run one).
     "no_repo_matched": "No Repo Matched",
+    # JIRA_APPROVAL_REQUIRED is on and the story hasn't reached
+    # jira_approved_status_name yet -- see pipeline/approval_poller.py. The
+    # run resumes (a new RunRecord, not this one updated in place) once
+    # approval_poller.py detects the status match.
+    "awaiting_approval": "Awaiting Approval",
     # Per-repo only (RepoChangeResult.status, not RunRecord.status) -- a
     # repo that was in scope but the agent decided didn't need editing.
     "no_changes": "No Changes",
@@ -201,6 +206,9 @@ def _config_context(username: str, saved: bool = False, error: str | None = None
                 "base_branch": rt.base_branch,
                 "test_command": rt.test_command,
                 "label": rt.label,
+                "tech_stack": rt.tech_stack,
+                "coding_standards": rt.coding_standards,
+                "lint_command": rt.lint_command,
             }
             for rt in get_settings(username).resolved_repo_targets
         ]
@@ -287,21 +295,25 @@ async def detect_test_command_route(repo: str, username: str = Depends(current_u
     field is filled in -- looks at that repo's actual root files (via this
     user's own GitHub token) and suggests a test command instead of leaving
     it blank or wrong. Best-effort: any failure (bad repo name, no access,
-    network) degrades to {"test_command": None}, same fail-open idiom as
-    everything else here -- this is a convenience, not something that
-    should be able to break the config page.
+    network) degrades to {"test_command": None, "tech_stack": None}, same
+    fail-open idiom as everything else here -- this is a convenience, not
+    something that should be able to break the config page.
+
+    Also suggests a tech_stack (RepoTarget.tech_stack) from the same root
+    file listing -- one GitHub call covers both detections, since they're
+    reading the same marker files for different purposes.
     """
     settings = get_settings(username)
     repo = repo.strip()
     if not repo or not settings.github_token:
-        return {"test_command": None}
+        return {"test_command": None, "tech_stack": None}
 
     github = GitHubClient(settings.github_token)
     try:
         files = await github.list_root_files(repo)
-        return {"test_command": detect_test_command(files)}
+        return {"test_command": detect_test_command(files), "tech_stack": detect_tech_stack(files)}
     except Exception:
-        return {"test_command": None}
+        return {"test_command": None, "tech_stack": None}
     finally:
         await github.aclose()
 

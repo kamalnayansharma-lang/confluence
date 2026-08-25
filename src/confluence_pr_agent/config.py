@@ -156,6 +156,16 @@ class Settings(BaseSettings):
     # JSON blob) -- see the plan's repeating-repo-config-editor follow-up.
     target_repos_json: str = Field(default="")
 
+    # Global fallback conventions applied to every repo that doesn't set its
+    # own RepoTarget.coding_standards -- see agent/prompts.py. Free text:
+    # naming, layout, patterns to prefer/avoid.
+    coding_standards: str = Field(default="")
+    # Confluence page id of a pinned, org-wide engineering-standards page,
+    # fetched once per run (ConfluenceClient.fetch_page -- no new client
+    # method needed) and folded into the same prompt section as
+    # coding_standards above. Blank = not configured, skipped entirely.
+    standards_confluence_page_id: str = Field(default="")
+
     # Change engine (code-writing backend) -- one of:
     # claude_code | cursor | copilot | codex | gemini | antigravity
     # Deliberately per-user like everything else here, even though the
@@ -175,6 +185,7 @@ class Settings(BaseSettings):
     cursor_api_key: str = Field(default="")  # cursor engine
     openai_api_key: str = Field(default="")  # codex engine
     gemini_api_key: str = Field(default="")  # gemini engine
+    kiro_api_key: str = Field(default="")  # kiro engine
     # copilot engine reuses github_token above; antigravity is OAuth-only (no key)
 
     # LLM-as-judge review gate: after tests pass but before a PR is opened,
@@ -212,6 +223,20 @@ class Settings(BaseSettings):
     # calibration. A suggestion a human confirms is safer than a number
     # that silently enters real sprint math.
     jira_suggest_story_points: bool = Field(default=False)
+    # HITL gate: opt-in, default OFF. When on, run_pipeline stops right
+    # after creating/updating the Jira story instead of continuing straight
+    # into cloning + implementation -- see pipeline/orchestrator.py's
+    # _implement_change split and pipeline/approval_poller.py. Off by
+    # default so every existing single-page flow (webhook or poll-triggered)
+    # keeps today's fully-automatic behavior unchanged.
+    jira_approval_required: bool = Field(default=False)
+    # The literal Jira workflow status name (e.g. "Approved") that means "a
+    # human approved this for implementation" -- deliberately a status NAME,
+    # not JiraIssueStatus.status_category (models.py), which is only the
+    # coarse new/indeterminate/done bucket and can't distinguish "approved"
+    # from any other in-progress status. Required for jira_approval_required
+    # to do anything; matched case-insensitively.
+    jira_approved_status_name: str = Field(default="")
 
     # Team notification email -- one of: sendgrid | postmark
     email_provider: str = Field(default="sendgrid")
@@ -261,6 +286,9 @@ class Settings(BaseSettings):
                         base_branch=str(entry.get("base_branch") or "main"),
                         test_command=str(entry.get("test_command") or "pytest"),
                         label=str(entry.get("label") or "").strip(),
+                        tech_stack=str(entry.get("tech_stack") or "").strip(),
+                        coding_standards=str(entry.get("coding_standards") or "").strip(),
+                        lint_command=str(entry.get("lint_command") or "").strip(),
                     )
                     for entry in parsed
                 ]
@@ -302,6 +330,14 @@ class Settings(BaseSettings):
     @property
     def runs_store_path(self) -> Path:
         return self.data_dir_path / "runs.json"
+
+    @property
+    def pending_approvals_store_path(self) -> Path:
+        return self.data_dir_path / "pending_approvals.json"
+
+    @property
+    def sprint_plan_store_path(self) -> Path:
+        return self.data_dir_path / "sprint_plans.json"
 
 
 @lru_cache

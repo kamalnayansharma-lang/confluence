@@ -12,6 +12,7 @@ from confluence_pr_agent.agent.engines.cursor_cli import CursorCliEngine, parse_
 from confluence_pr_agent.agent.engines.cursor_cli import parse_usage as parse_cursor_usage
 from confluence_pr_agent.agent.engines.gemini_cli import GeminiCliEngine, parse_response as parse_gemini_response
 from confluence_pr_agent.agent.engines.gemini_cli import parse_usage as parse_gemini_usage
+from confluence_pr_agent.agent.engines.kiro_cli import KiroCliEngine
 from confluence_pr_agent.agent.factory import build_change_engine
 
 
@@ -25,6 +26,7 @@ from confluence_pr_agent.agent.factory import build_change_engine
         ("codex", CodexCliEngine),
         ("gemini", GeminiCliEngine),
         ("antigravity", AntigravityCliEngine),
+        ("kiro", KiroCliEngine),
     ],
 )
 def test_build_change_engine_dispatches_by_name(name, expected_type, settings):
@@ -50,6 +52,34 @@ def test_build_change_engine_passes_gemini_key_to_gemini(settings):
     settings.gemini_api_key = "gm-test-123"
     engine = build_change_engine(settings)
     assert engine._api_key == "gm-test-123"
+
+
+def test_build_change_engine_passes_kiro_key_to_kiro(settings):
+    settings.change_agent_engine = "kiro"
+    settings.kiro_api_key = "kiro-test-123"
+    engine = build_change_engine(settings)
+    assert engine._api_key == "kiro-test-123"
+
+
+async def test_kiro_engine_reports_missing_binary_clearly(settings, tmp_path, monkeypatch):
+    """Doesn't need a real kiro-cli install -- confirms the "not found on
+    PATH" fallback (shared shape with every other CLI-based engine) fires
+    correctly rather than raising, since this is the one engine whose exact
+    flags haven't been verified against a live binary (see
+    docs/change-engines.md).
+    """
+    from confluence_pr_agent.models import PageDiff, PageSnapshot
+
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    engine = KiroCliEngine(api_key="kiro-test-123")
+    diff = PageDiff(
+        page=PageSnapshot(page_id="1", title="t", version=1, body_html="<p>x</p>", url="https://x"),
+        previous_version=None, diff_text="spec", is_first_seen=True, body_checksum="abc",
+    )
+    result = await engine.implement_change(tmp_path, diff, max_turns=5)
+    assert result.success is False
+    assert "kiro-cli" in result.summary
+    assert "not found on PATH" in result.summary
 
 
 def test_cursor_parse_result_extracts_result_field():

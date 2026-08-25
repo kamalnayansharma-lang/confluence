@@ -51,6 +51,7 @@ case "$CHANGE_AGENT_ENGINE" in
   copilot)     ENGINE_BINARY=copilot; ENGINE_INSTALL="npm install -g @github/copilot" ;;
   codex)       ENGINE_BINARY=codex;   ENGINE_INSTALL="npm install -g @openai/codex" ;;
   gemini)      ENGINE_BINARY=gemini;  ENGINE_INSTALL="npm install -g @google/gemini-cli" ;;
+  kiro)        ENGINE_BINARY=kiro-cli; ENGINE_INSTALL="curl -fsSL https://cli.kiro.dev/install | bash" ;;
   antigravity)
     ENGINE_BINARY=agy
     ENGINE_INSTALL=""

@@ -46,8 +46,24 @@ async def run_tests(repo_dir: Path, command: str) -> RepoTestResult:
         if returncode != 0:
             log_parts.append(f"(dependency install failed with exit code {returncode}; running tests anyway)")
 
-    args = shlex.split(command)
-    returncode, output = await _run(*args, cwd=repo_dir)
+    # shlex.split raises ValueError on malformed quoting (e.g. an unclosed
+    # quote); create_subprocess_exec raises OSError (FileNotFoundError,
+    # PermissionError, NotADirectoryError, ...) when the parsed command's
+    # binary can't actually be run. Both are "this command is unusable", not
+    # "the tests/lint failed" -- caught here so a typo'd command produces a
+    # clean, readable RepoTestResult(crashed=True) instead of an unhandled
+    # exception that would otherwise abort the whole pipeline run with a
+    # raw traceback as the only explanation.
+    try:
+        args = shlex.split(command)
+        returncode, output = await _run(*args, cwd=repo_dir)
+    except (ValueError, OSError) as exc:
+        log_parts.append(
+            f"$ {command}\nCould not run this command: {exc}\n"
+            "Check it's valid shell syntax and its binary actually exists in this container."
+        )
+        return RepoTestResult(passed=False, crashed=True, output="\n".join(log_parts), command=command)
+
     log_parts.append(f"$ {command}\n{output}")
 
     return RepoTestResult(passed=returncode == 0, output="\n".join(log_parts), command=command)

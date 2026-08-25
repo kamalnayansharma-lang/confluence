@@ -72,6 +72,33 @@ def _forced_reprocess_diff(page: PageSnapshot, previous_version: int, new_text: 
     )
 
 
+def build_full_spec_diff(page: PageSnapshot) -> PageDiff:
+    """Always represents `page`'s current full body as `diff_text`,
+    regardless of anything PageStore knows about it -- deliberately NOT
+    `compute_diff`, which is stateful ("what changed since this page was
+    last processed") and can return an *empty* diff_text for a page the
+    regular single-page pipeline already processed, even though the page
+    obviously still has a full spec on it.
+
+    Used by "Plan a Sprint" (ui/plan_sprint.py, jira/sprint_planner.py):
+    the planner needs to actually read each page's current requirements to
+    predict repos/dependencies, not a diff against unrelated prior
+    processing history -- a sprint plan is a deliberate "implement what
+    this page currently specifies" action, not an incremental update.
+    `is_first_seen=True` here reflects that framing for the coding agent
+    too (see agent/prompts.py::build_user_prompt), not a claim that the
+    page has never been seen by this pipeline before.
+    """
+    plain_text = _to_plain_text(page.body_html)
+    return PageDiff(
+        page=page,
+        previous_version=None,
+        diff_text=plain_text,
+        is_first_seen=True,
+        body_checksum=compute_checksum(plain_text),
+    )
+
+
 def compute_diff(store: PageStore, page: PageSnapshot, force: bool = False) -> PageDiff:
     previous = store.get(page.page_id)
     new_text = _to_plain_text(page.body_html)

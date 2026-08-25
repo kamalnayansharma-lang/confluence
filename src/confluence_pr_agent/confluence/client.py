@@ -110,3 +110,53 @@ class ConfluenceClient:
             params = None  # already encoded into next_path's query string
 
         return page_ids
+
+    async def search_page_ids_all_labels(self, space_key: str, required_labels: list[str]) -> list[str]:
+        """Like search_page_ids, but ANDs every label together instead of
+        ORing them -- "must have all of these", not "must have at least
+        one". Used by the sprint planner (ui/plan_sprint.py) to find pages
+        carrying both the gate label and a specific sprint label;
+        search_page_ids's OR semantics are what the general poller
+        (pipeline/poller.py) wants instead, so this is a distinct method
+        rather than an overloaded flag on that one.
+        """
+        clauses = [f'space="{_cql_escape(space_key)}"', "type=page"]
+        clauses.extend(f'label="{_cql_escape(label)}"' for label in required_labels)
+        cql = " AND ".join(clauses)
+
+        page_ids: list[str] = []
+        url = f"{self._base_url}/rest/api/content/search"
+        params: dict | None = {"cql": cql, "limit": 100}
+        for _ in range(20):
+            resp = await self._client.get(url, params=params, auth=self._auth)
+            resp.raise_for_status()
+            data = resp.json()
+            page_ids.extend(str(r["id"]) for r in data.get("results", []))
+
+            next_path = data.get("_links", {}).get("next")
+            if not next_path:
+                break
+            url = f"{self._base_url}{next_path}"
+            params = None
+
+        return page_ids
+
+    async def search_pages_by_text(self, space_key: str, query: str, limit: int = 5) -> list[str]:
+        """Free-text CQL search (title/body), for jira/story_writer.py's
+        "related prior work" fallback when a page has no explicit inline
+        links to related content (see confluence/links.py). Returns page
+        ids only -- the caller fetches full content for whichever ones it
+        actually wants via fetch_page, same as every other search method
+        here.
+        """
+        query = query.strip()
+        if not query:
+            return []
+        cql = f'space="{_cql_escape(space_key)}" AND type=page AND text ~ "{_cql_escape(query)}"'
+        resp = await self._client.get(
+            f"{self._base_url}/rest/api/content/search",
+            params={"cql": cql, "limit": limit},
+            auth=self._auth,
+        )
+        resp.raise_for_status()
+        return [str(r["id"]) for r in resp.json().get("results", [])]

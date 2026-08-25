@@ -3,7 +3,7 @@
 Watches a Confluence spec page. When it changes, diffs the change against
 the last-seen version, implements the corresponding code change (plus tests)
 in a target GitHub repo using a pluggable code-writing engine (Claude Code,
-Cursor, GitHub Copilot, OpenAI Codex, Gemini CLI, or Antigravity CLI — see
+Cursor, GitHub Copilot, OpenAI Codex, Gemini CLI, Antigravity CLI, or Kiro CLI — see
 [docs/change-engines.md](docs/change-engines.md)), opens a PR describing the
 change and linking back to the Confluence page, and emails the team a
 summary. A small web UI (`/ui/*`) covers configuring credentials, browsing
@@ -159,7 +159,7 @@ keep alive):
 cp .env.example .env   # fill in credentials via the UI once it's running, or by hand now
 
 podman build -f Containerfile -t confluence-pr-agent \
-  --build-arg CHANGE_AGENT_ENGINE=claude_code .   # or cursor/copilot/codex/gemini/antigravity
+  --build-arg CHANGE_AGENT_ENGINE=claude_code .   # or cursor/copilot/codex/gemini/antigravity/kiro
 
 podman run -d --name confluence-pr-agent \
   --restart unless-stopped \

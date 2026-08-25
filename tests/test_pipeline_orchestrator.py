@@ -21,6 +21,7 @@ from confluence_pr_agent.models import (
 from confluence_pr_agent.pipeline import orchestrator
 from confluence_pr_agent.pipeline.orchestrator import PipelineDeps, build_deps, run_pipeline
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
+from confluence_pr_agent.storage.pending_approval_store import PendingApproval, PendingApprovalStore
 from confluence_pr_agent.storage.run_store import RunStore
 
 
@@ -99,6 +100,7 @@ def _make_deps(settings, *, page: PageSnapshot) -> PipelineDeps:
         run_store=RunStore(settings.runs_store_path),
         judge=judge,
         jira=jira,
+        pending_approvals=PendingApprovalStore(settings.pending_approvals_store_path),
     )
 
 
@@ -345,6 +347,109 @@ async def test_jira_enabled_creates_a_story_and_comments_the_pr_link(settings, m
     runs = deps.run_store.list_runs()
     assert runs[0]["jira_issue_key"] == "SD-1"
     assert runs[0]["jira_reused"] is False
+
+
+async def test_approval_required_stops_after_story_creation_and_never_clones(settings, monkeypatch):
+    """JIRA_APPROVAL_REQUIRED's whole point: the story exists, but nothing
+    downstream (clone, agent, tests, PR) runs until a separate resumed call
+    -- see pipeline/approval_poller.py, not exercised here.
+    """
+    _enable_jira(settings)
+    settings.jira_approval_required = True
+    settings.jira_approved_status_name = "Approved"
+    page = _page(1, body="<p>spec v1</p>")
+    deps = _make_deps(settings, page=page)
+
+    async def _fake_story(settings, diff):
+        return _FAKE_STORY
+
+    monkeypatch.setattr(orchestrator, "generate_story_content", _fake_story)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "awaiting_approval"
+    assert result.jira_issue is not None
+    assert result.jira_issue.key == "SD-1"
+    deps.change_engine.implement_change.assert_not_awaited()
+    deps.git.clone.assert_not_awaited()
+    deps.github.open_pull_request.assert_not_awaited()
+
+    pending = deps.pending_approvals.get("123456")
+    assert pending is not None
+    assert pending["jira_issue_key"] == "SD-1"
+
+    # The page-version store must NOT advance -- an approval-gated run has
+    # no durable success artifact yet (see the "only advance on a fully
+    # successful run" rule the rest of the pipeline already follows).
+    assert deps.store.get("123456") is None
+
+
+async def test_approval_required_off_by_default_matches_todays_behavior(settings, monkeypatch):
+    """The opt-in default itself: an account that never touches
+    JIRA_APPROVAL_REQUIRED sees zero behavior change -- same assertion style
+    as test_jira_enabled_creates_a_story_and_comments_the_pr_link, just
+    confirming the new field defaults to False.
+    """
+    assert settings.jira_approval_required is False
+    _enable_jira(settings)
+    page = _page(1, body="<p>spec v1</p>")
+    deps = _make_deps(settings, page=page)
+
+    async def _fake_run_tests(repo_dir, command):
+        return RepoTestResult(passed=True, output="2 passed", command=command)
+
+    async def _fake_story(settings, diff):
+        return _FAKE_STORY
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+    monkeypatch.setattr(orchestrator, "generate_story_content", _fake_story)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
+    assert deps.pending_approvals.get("123456") is None
+
+
+async def test_resume_after_approval_implements_the_saved_diff_without_refetching(settings, monkeypatch):
+    """`resume` is what pipeline/approval_poller.py passes once a story
+    reaches JIRA_APPROVED_STATUS_NAME -- confirms it skips straight to
+    implementation using the exact saved diff/story, never re-creating a
+    story or re-touching the label gate.
+    """
+    settings.jira_approval_required = True
+    page = _page(1, body="<p>spec v1 (as approved)</p>")
+    deps = _make_deps(settings, page=page)
+
+    async def _fake_run_tests(repo_dir, command):
+        return RepoTestResult(passed=True, output="2 passed", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+
+    pending: PendingApproval = {
+        "page_id": "123456",
+        "jira_issue_key": "SD-1",
+        "jira_issue_url": "https://neurealm-team-juadifpx.atlassian.net/browse/SD-1",
+        "previous_version": None,
+        "diff_text": "(No prior version on record -- treating the full current body as the initial spec.)\n\nspec",
+        "is_first_seen": True,
+        "body_checksum": "irrelevant-for-this-test",
+        "page_version": 1,
+        "page_body_checksum": "irrelevant-for-this-test",
+        "page_title": "Checkout Flow Spec",
+        "page_url": page.url,
+        "page_body_html": page.body_html,
+        "page_labels": [],
+        "run_id": "resumed-run-1",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+
+    result = await run_pipeline("123456", deps=deps, resume=pending)
+
+    assert result.status == "opened_pr"
+    assert result.jira_issue is not None
+    assert result.jira_issue.key == "SD-1"
+    deps.confluence.fetch_page.assert_not_awaited()  # never re-fetched the live page
+    deps.jira.create_issue.assert_not_awaited()  # never created a second story
 
 
 async def test_jira_reuses_still_open_story_instead_of_creating_a_new_one(settings, monkeypatch):
@@ -742,6 +847,81 @@ async def test_tests_fail_then_pass_on_retry_records_two_attempts(settings, monk
 
     runs = deps.run_store.list_runs()
     assert runs[0]["attempts"] == 2
+
+
+async def test_lint_failure_feeds_back_into_the_same_retry_loop_as_a_test_failure(settings, monkeypatch):
+    """RepoTarget.lint_command (Phase 4) reuses run_tests's own pass/fail
+    shape and the existing retry loop -- a lint failure on attempt 1 must
+    retry exactly like a test failure would, and only run at all once tests
+    themselves already passed.
+    """
+    settings.target_repos_json = json.dumps(
+        [{"target_repo": "acme/widgets", "base_branch": "main", "test_command": "pytest", "lint_command": "ruff check ."}]
+    )
+    page = _page(1, body="<p>spec v1</p>")
+    deps = _make_deps(settings, page=page)
+
+    call_log: list[str] = []
+
+    async def _fake_run_tests(repo_dir, command):
+        call_log.append(command)
+        if command == "ruff check ." and call_log.count("ruff check .") == 1:
+            return RepoTestResult(passed=False, output="E501 line too long", command=command)
+        return RepoTestResult(passed=True, output="ok", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
+    assert result.attempts == 2
+    # pytest ran on both attempts; lint only ran once tests passed each time.
+    assert call_log == ["pytest", "ruff check .", "pytest", "ruff check ."]
+    second_call_kwargs = deps.change_engine.implement_change.await_args_list[1].kwargs
+    assert "E501 line too long" in second_call_kwargs["retry_context"]
+
+
+async def test_invalid_lint_command_fails_open_instead_of_blocking_the_pr(settings, monkeypatch):
+    """A lint_command that can't even be run (typo, missing binary --
+    crashed=True, see testing/test_runner.py) must NOT block an otherwise
+    passing, tested change -- lint is optional, unlike the test command
+    itself. Distinct from test_lint_failure_feeds_back_into_the_same_retry_
+    loop_as_a_test_failure above, where the lint command DID run and found
+    a real violation, which correctly still blocks/retries.
+    """
+    settings.target_repos_json = json.dumps(
+        [{"target_repo": "acme/widgets", "base_branch": "main", "test_command": "pytest", "lint_command": "this-binary-does-not-exist"}]
+    )
+    page = _page(1, body="<p>spec v1</p>")
+    deps = _make_deps(settings, page=page)
+
+    async def _fake_run_tests(repo_dir, command):
+        if command == "this-binary-does-not-exist":
+            return RepoTestResult(
+                passed=False, crashed=True, output="Could not run this command: [Errno 2] No such file", command=command
+            )
+        return RepoTestResult(passed=True, output="ok", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
+    assert result.attempts == 1  # never retried -- the crash isn't treated as a real failure
+
+
+async def test_lint_command_blank_by_default_never_runs(settings, monkeypatch):
+    async def _fake_run_tests(repo_dir, command):
+        assert command == "pytest"  # never called with anything else
+        return RepoTestResult(passed=True, output="ok", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+    page = _page(1, body="<p>spec v1</p>")
+    deps = _make_deps(settings, page=page)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
 
 
 async def test_tests_still_failing_after_max_attempts_records_tests_failed(settings, monkeypatch):

@@ -1,5 +1,5 @@
 # Builds an image with only the change-engine CLI you've actually selected,
-# via --build-arg CHANGE_AGENT_ENGINE=claude_code|cursor|copilot|codex|gemini|antigravity.
+# via --build-arg CHANGE_AGENT_ENGINE=claude_code|cursor|copilot|codex|gemini|antigravity|kiro.
 # See docs/change-engines.md for what each engine needs. Note: antigravity is
 # OAuth-only -- the binary installs fine here, but headless use still needs
 # credentials from a prior `agy login`, which this build cannot do for you
@@ -40,6 +40,7 @@ RUN set -eux; \
       codex)       npm install -g @openai/codex ;; \
       gemini)      npm install -g @google/gemini-cli ;; \
       antigravity) curl -fsSL https://antigravity.google/cli/install.sh | bash ;; \
+      kiro)        curl -fsSL https://cli.kiro.dev/install | bash ;; \
       *) echo "Unknown CHANGE_AGENT_ENGINE: $CHANGE_AGENT_ENGINE" >&2; exit 1 ;; \
     esac
 ENV PATH="/root/.local/bin:${PATH}"

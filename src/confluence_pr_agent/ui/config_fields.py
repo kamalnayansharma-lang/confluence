@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 # -- the single source of truth for both the config form's dropdown and the
 # /ui/runs filter dropdown (which must not be limited to engines that
 # happen to already appear in run history).
-ALL_ENGINES = ["claude_code", "cursor", "copilot", "codex", "gemini", "antigravity"]
+ALL_ENGINES = ["claude_code", "cursor", "copilot", "codex", "gemini", "antigravity", "kiro"]
 
 # "github" is the only one the pipeline actually implements today (see
 # config.py::repo_provider and pipeline/orchestrator.py::build_deps, which
@@ -28,6 +28,7 @@ ENGINE_CREDENTIAL_KEYS = (
     "CURSOR_API_KEY",
     "OPENAI_API_KEY",
     "GEMINI_API_KEY",
+    "KIRO_API_KEY",
 )
 
 ENGINE_CREDENTIAL_BY_ENGINE = {
@@ -35,6 +36,7 @@ ENGINE_CREDENTIAL_BY_ENGINE = {
     "cursor": "CURSOR_API_KEY",
     "codex": "OPENAI_API_KEY",
     "gemini": "GEMINI_API_KEY",
+    "kiro": "KIRO_API_KEY",
     "copilot": None,  # reuses GITHUB_TOKEN
     "antigravity": None,  # OAuth-only
 }
@@ -129,15 +131,37 @@ CONFIG_FIELDS: list[ConfigField] = [
     ConfigField(
         "TARGET_REPOS_JSON", "Target repos", "Repository", input_type="repo_list",
         help_text=(
-            "One row per repo this pipeline can touch. Test command can be auto-detected from "
-            "what's actually in the repo (pyproject.toml, package.json, pom.xml, ...), or set by "
-            "hand. Leave Routing label blank on a row to have it match every spec page (the usual "
-            "single-repo setup) -- set it to route that row only to pages carrying that Confluence "
-            "label, so one page can fan a coordinated change out across several repos at once. "
-            "Add more than one row only for that case."
+            "One row per repo this pipeline can touch. Test command and tech stack can both be "
+            "auto-detected from what's actually in the repo (pyproject.toml, package.json, "
+            "pom.xml, ...), or set by hand. Leave Routing label blank on a row to have it match "
+            "every spec page (the usual single-repo setup) -- set it to route that row only to "
+            "pages carrying that Confluence label, so one page can fan a coordinated change out "
+            "across several repos at once. Add more than one row only for that case. Tech stack "
+            "matters most for a genuinely empty repo, where the change engine has no existing code "
+            "to infer conventions from -- see the field's own help text. Coding standards on a row "
+            "overrides the global Coding standards fallback below for that repo only."
         ),
     ),
     ConfigField("GITHUB_TOKEN", "GitHub PAT", "Repository", secret=True),
+    ConfigField(
+        "CODING_STANDARDS", "Coding standards (global fallback)", "Repository",
+        help_text=(
+            "Free-text conventions (naming, layout, patterns to prefer/avoid) applied to every repo "
+            "that doesn't set its own Coding standards in the Target repos table above. The change "
+            "engine is also always told to look for and follow any CONTRIBUTING.md/STYLE_GUIDE.md/"
+            "linter config already in the repo -- this field is for guidance that isn't written down "
+            "in the repo itself."
+        ),
+    ),
+    ConfigField(
+        "STANDARDS_CONFLUENCE_PAGE_ID", "Org-wide standards page ID (optional)", "Repository",
+        placeholder="123456",
+        help_text=(
+            "A Confluence page ID for a pinned, org-wide engineering-standards page. Fetched once "
+            "per run and folded into the same prompt section as Coding standards above. Leave blank "
+            "to skip."
+        ),
+    ),
     # Change engine
     ConfigField(
         "CHANGE_AGENT_ENGINE", "Change engine", "Change engine", input_type="select",
@@ -167,6 +191,14 @@ CONFIG_FIELDS: list[ConfigField] = [
     ConfigField(
         "GEMINI_API_KEY", "Gemini API key (gemini)", "Change engine", secret=True,
         help_text="Also used by the LLM Judge review gate below when its provider is set to Gemini.",
+    ),
+    ConfigField(
+        "KIRO_API_KEY", "Kiro API key (kiro)", "Change engine", secret=True,
+        help_text=(
+            "Requires the kiro-cli binary on PATH (curl -fsSL https://cli.kiro.dev/install | bash). "
+            "This engine's exact CLI flags are sourced from Kiro's own docs, not verified against a "
+            "live run -- if it fails outright on first use, check docs/change-engines.md's note on it."
+        ),
     ),
     # LLM judge
     ConfigField(
@@ -222,6 +254,24 @@ CONFIG_FIELDS: list[ConfigField] = [
             "Adds an \"AI-suggested complexity\" comment on the story -- never writes the real Story "
             "Points field (a per-instance custom field an LLM has no basis to fill in directly). A "
             "human still sizes the story; this is just a starting signal."
+        ),
+    ),
+    ConfigField(
+        "JIRA_APPROVAL_REQUIRED", "Require approval before implementation", "Jira", input_type="select",
+        options=["true", "false"],
+        help_text=(
+            "Off by default -- today's behavior: the story is created and implementation starts in "
+            "the same run. Turn this on to stop right after the story is created/updated and wait "
+            "for it to reach the status named below before cloning/implementing anything. Also the "
+            "gate \"Plan a Sprint\" approvals rely on."
+        ),
+    ),
+    ConfigField(
+        "JIRA_APPROVED_STATUS_NAME", "Approved status name", "Jira", placeholder="Approved",
+        help_text=(
+            "The exact Jira workflow status (not category) that means a human approved this story "
+            "for implementation -- matched case-insensitively. Required for the setting above to do "
+            "anything; must be a real status in this project's workflow."
         ),
     ),
     # Email
