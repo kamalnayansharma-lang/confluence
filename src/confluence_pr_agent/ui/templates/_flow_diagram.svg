@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="2420" viewBox="0 0 1300 2420" font-family="Helvetica, Arial, sans-serif">
+<rect x="0" y="0" width="1300" height="2420" fill="#ffffff"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555555"/></marker></defs>
+<path d="M 430.0 100.0 L 430.0 150.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 210.0 L 430.0 260.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 360.0 L 430.0 410.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="416.7" y="369.0" width="26.6" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="379.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">yes</tspan></text>
+<path d="M 570.0 310.0 L 660.0 310.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="604.8" y="294.0" width="20.4" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="615.0" y="304.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="615.0" dy="0">no</tspan></text>
+<path d="M 430.0 510.0 L 430.0 560.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="404.3" y="519.0" width="51.4" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="529.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">changed</tspan></text>
+<path d="M 570.0 460.0 L 660.0 460.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="583.1" y="430.0" width="63.8" height="48.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="615.0" y="440.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="615.0" dy="0">no (dup /</tspan><tspan x="615.0" dy="14">checksum</tspan><tspan x="615.0" dy="14">match)</tspan></text>
+<path d="M 570.0 605.0 L 990.0 670.0" fill="none" stroke="#6c8ebf" stroke-dasharray="6,4" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="723.3" y="621.5" width="113.4" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="780.0" y="631.5" font-size="10.5" fill="#6c8ebf" text-anchor="middle"><tspan x="780.0" dy="0">batch alternative</tspan></text>
+<path d="M 430.0 650.0 L 430.0 690.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 800.0 L 430.0 850.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="416.7" y="809.0" width="26.6" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="819.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">yes</tspan></text>
+<path d="M 290.0 745.0 L 200.0 745.0 L 200.0 1190.0 L 290.0 1190.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="121.6" y="1167.0" width="156.8" height="34.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="200.0" y="1177.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="200.0" dy="0">no (default) — proceed</tspan><tspan x="200.0" dy="14">automatically, as before</tspan></text>
+<path d="M 430.0 930.0 L 430.0 970.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 570.0 1025.0 L 660.0 1030.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="576.9" y="1004.5" width="76.2" height="34.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="615.0" y="1014.5" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="615.0" dy="0">page edited</tspan><tspan x="615.0" dy="14">again</tspan></text>
+<path d="M 660.0 1030.0 L 600.0 1120.0 L 250.0 1120.0 L 290.0 1047.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="205.7" y="1104.0" width="88.6" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="250.0" y="1114.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="250.0" dy="0">still waiting</tspan></text>
+<path d="M 430.0 1080.0 L 430.0 1140.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="398.1" y="1080.0" width="63.8" height="48.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="1090.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">approved</tspan><tspan x="430.0" dy="14">&amp;</tspan><tspan x="430.0" dy="14">unchanged</tspan></text>
+<path d="M 430.0 1240.0 L 430.0 1290.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="416.7" y="1249.0" width="26.6" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="1259.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">yes</tspan></text>
+<path d="M 570.0 1190.0 L 660.0 1190.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="604.8" y="1174.0" width="20.4" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="615.0" y="1184.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="615.0" dy="0">no</tspan></text>
+<path d="M 430.0 1360.0 L 430.0 1410.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 1500.0 L 430.0 1550.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 1640.0 L 430.0 1690.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 1800.0 L 430.0 1850.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="413.6" y="1809.0" width="32.8" height="20.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="430.0" y="1819.0" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="430.0" dy="0">pass</tspan></text>
+<path d="M 290.0 1745.0 L 200.0 1745.0 L 200.0 1595.0 L 290.0 1595.0" fill="none" stroke="#b85450" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="109.2" y="1572.0" width="181.6" height="34.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="200.0" y="1582.0" font-size="10.5" fill="#b85450" text-anchor="middle"><tspan x="200.0" dy="0">fail, attempts remain — feed</tspan><tspan x="200.0" dy="14">failure output back, retry</tspan></text>
+<path d="M 570.0 1745.0 L 660.0 1740.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="583.1" y="1712.5" width="63.8" height="48.0" fill="#ffffff" fill-opacity="0.9"/>
+<text x="615.0" y="1722.5" font-size="10.5" fill="#333333" text-anchor="middle"><tspan x="615.0" dy="0">fail,</tspan><tspan x="615.0" dy="14">attempts</tspan><tspan x="615.0" dy="14">exhausted</tspan></text>
+<path d="M 430.0 1940.0 L 430.0 1990.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 2070.0 L 430.0 2120.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 2180.0 L 430.0 2220.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<path d="M 430.0 2280.0 L 430.0 2320.0" fill="none" stroke="#555555" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="300.0" y="40.0" width="260.0" height="60.0" rx="30.0" ry="30.0" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="67.0">Confluence page edited</tspan><tspan x="430.0" y="82.0">(webhook delivery or poller tick)</tspan></text>
+<rect x="300.0" y="150.0" width="260.0" height="60.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="169.5">Fetch page body; convert XHTML to plain</tspan><tspan x="430.0" y="184.5">text</tspan><tspan x="430.0" y="199.5">confluence/diff.py::_to_plain_text</tspan></text>
+<polygon points="430.0,260.0 570.0,310.0 430.0,360.0 290.0,310.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="292.0">Page carries a</tspan><tspan x="430.0" y="307.0">required gate label?</tspan><tspan x="430.0" y="322.0"></tspan><tspan x="430.0" y="337.0">(CONFLUENCE_ALLOWED_LABELS)</tspan></text>
+<rect x="660.0" y="280.0" width="230.0" height="60.0" rx="30.0" ry="30.0" fill="#f8cecc" stroke="#b85450" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="775.0" y="300.0">IGNORED</tspan><tspan x="775.0" y="314.0">page lacks the gate label — no</tspan><tspan x="775.0" y="328.0">diff, no clone, no agent work</tspan></text>
+<polygon points="430.0,410.0 570.0,460.0 430.0,510.0 290.0,460.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="442.0">Version changed AND</tspan><tspan x="430.0" y="457.0">body checksum</tspan><tspan x="430.0" y="472.0">differs since last</tspan><tspan x="430.0" y="487.0">run?</tspan></text>
+<rect x="660.0" y="430.0" width="230.0" height="60.0" rx="30.0" ry="30.0" fill="#f8cecc" stroke="#b85450" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="775.0" y="443.0">NO_CHANGE_DETECTED</tspan><tspan x="775.0" y="457.0">duplicate webhook, or a</tspan><tspan x="775.0" y="471.0">metadata-only edit (labels,</tspan><tspan x="775.0" y="485.0">restore)</tspan></text>
+<rect x="290.0" y="560.0" width="280.0" height="90.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="579.5">PROCESS 1 — Generate Jira story from the</tspan><tspan x="430.0" y="594.5">spec diff</tspan><tspan x="430.0" y="609.5">(skipped if JIRA_ENABLED=false)</tspan><tspan x="430.0" y="624.5">jira/story_writer.py — title, description,</tspan><tspan x="430.0" y="639.5">acceptance criteria, complexity</tspan></text>
+<rect x="990.0" y="560.0" width="270.0" height="220.0" rx="6.0" ry="6.0" fill="#eef4ff" stroke="#6c8ebf" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="start"><tspan x="998.0" y="579.0">ALTERNATE BATCH ENTRY POINT</tspan><tspan x="998.0" y="593.0">Plan a Sprint — /ui/plan-sprint</tspan><tspan x="998.0" y="607.0"></tspan><tspan x="998.0" y="621.0">Batch-plans several BRD+sprint-tagged</tspan><tspan x="998.0" y="635.0">pages at once: predicts routing labels</tspan><tspan x="998.0" y="649.0">and cross-page dependencies, writes the</tspan><tspan x="998.0" y="663.0">order as real Jira issue links</tspan><tspan x="998.0" y="677.0">(jira/sprint_planner.py), then feeds</tspan><tspan x="998.0" y="691.0">each page's story through this same</tspan><tspan x="998.0" y="705.0">approval gate and pipeline one at a</tspan><tspan x="998.0" y="719.0">time, merge-gated by</tspan><tspan x="998.0" y="733.0">pipeline/sprint_runner.py.</tspan></text>
+<polygon points="430.0,690.0 570.0,745.0 430.0,800.0 290.0,745.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="712.0"></tspan><tspan x="430.0" y="727.0">JIRA_APPROVAL_REQUIRED</tspan><tspan x="430.0" y="742.0">enabled?</tspan><tspan x="430.0" y="757.0">(config switch,</tspan><tspan x="430.0" y="772.0">default OFF — see</tspan><tspan x="430.0" y="787.0">Configuration)</tspan></text>
+<rect x="300.0" y="850.0" width="260.0" height="80.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="872.0">AWAITING_APPROVAL</tspan><tspan x="430.0" y="887.0">Diff snapshot saved to</tspan><tspan x="430.0" y="902.0">PendingApprovalStore.</tspan><tspan x="430.0" y="917.0">No clone, no code change, no PR yet.</tspan></text>
+<polygon points="430.0,970.0 570.0,1025.0 430.0,1080.0 290.0,1025.0" fill="#ffe6cc" stroke="#d79b00" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="994.0">approval_poller.py</tspan><tspan x="430.0" y="1008.0">(background timer):</tspan><tspan x="430.0" y="1022.0">Jira status ==</tspan><tspan x="430.0" y="1036.0">JIRA_APPROVED_STATUS_NAME,</tspan><tspan x="430.0" y="1050.0">and page unchanged</tspan><tspan x="430.0" y="1064.0">since story creation?</tspan></text>
+<rect x="660.0" y="985.0" width="260.0" height="90.0" rx="6.0" ry="6.0" fill="#fff2cc" stroke="#d6b656" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="start"><tspan x="668.0" y="1006.0">SPEC RE-EDITED WHILE PENDING</tspan><tspan x="668.0" y="1020.0">Refreshes the Jira description and</tspan><tspan x="668.0" y="1034.0">comments that it needs re-review — the</tspan><tspan x="668.0" y="1048.0">Jira status itself is left untouched</tspan><tspan x="668.0" y="1062.0">(never auto-approved or auto-reverted).</tspan></text>
+<polygon points="430.0,1140.0 570.0,1190.0 430.0,1240.0 290.0,1190.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1172.0">Resolve per-repo</tspan><tspan x="430.0" y="1187.0">routing labels —</tspan><tspan x="430.0" y="1202.0">any in-scope repo?</tspan><tspan x="430.0" y="1217.0">(TARGET_REPOS_JSON)</tspan></text>
+<rect x="660.0" y="1160.0" width="230.0" height="60.0" rx="30.0" ry="30.0" fill="#f8cecc" stroke="#b85450" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="775.0" y="1180.0">NO_REPO_MATCHED</tspan><tspan x="775.0" y="1194.0">no configured repo's routing label</tspan><tspan x="775.0" y="1208.0">hit this page</tspan></text>
+<rect x="300.0" y="1290.0" width="260.0" height="70.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1314.5">Clone repo(s); reuse an existing open</tspan><tspan x="430.0" y="1329.5">PR's</tspan><tspan x="430.0" y="1344.5">branch, or create a new branch</tspan></text>
+<rect x="290.0" y="1410.0" width="280.0" height="90.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1429.5">PROCESS 2 — Build code-change instructions</tspan><tspan x="430.0" y="1444.5">agent/prompts.py::build_user_prompt</tspan><tspan x="430.0" y="1459.5">header + repo context (tech stack / coding</tspan><tspan x="430.0" y="1474.5">standards) + diff/full-spec + retry</tspan><tspan x="430.0" y="1489.5">context</tspan></text>
+<rect x="290.0" y="1550.0" width="280.0" height="90.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1569.5">AI coding agent implements the change and</tspan><tspan x="430.0" y="1584.5">writes tests</tspan><tspan x="430.0" y="1599.5">(pluggable engine: Claude Code / Cursor /</tspan><tspan x="430.0" y="1614.5">Copilot / Codex / Gemini / Antigravity /</tspan><tspan x="430.0" y="1629.5">Kiro)</tspan></text>
+<polygon points="430.0,1690.0 570.0,1745.0 430.0,1800.0 290.0,1745.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1682.0">Tests pass?</tspan><tspan x="430.0" y="1697.0"></tspan><tspan x="430.0" y="1712.0">testing/test_runner.py</tspan><tspan x="430.0" y="1727.0">runs the repo's real</tspan><tspan x="430.0" y="1742.0">suite</tspan><tspan x="430.0" y="1757.0">(+ lint_command, if</tspan><tspan x="430.0" y="1772.0">configured — runs</tspan><tspan x="430.0" y="1787.0">after tests pass, same</tspan><tspan x="430.0" y="1802.0">pass/fail + retry</tspan><tspan x="430.0" y="1817.0">semantics)</tspan></text>
+<rect x="660.0" y="1710.0" width="230.0" height="60.0" rx="30.0" ry="30.0" fill="#f8cecc" stroke="#b85450" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="775.0" y="1730.0">TESTS_FAILED</tspan><tspan x="775.0" y="1744.0">no PR opens; retried from the same</tspan><tspan x="775.0" y="1758.0">diff on the next trigger</tspan></text>
+<rect x="290.0" y="1850.0" width="280.0" height="90.0" rx="6.0" ry="6.0" fill="#fff2cc" stroke="#d6b656" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="1869.5">LLM Judge reviews the actual code diff,</tspan><tspan x="430.0" y="1884.5">independently</tspan><tspan x="430.0" y="1899.5">implements_spec / scoped /</tspan><tspan x="430.0" y="1914.5">tests_cover_behavior — advisory, never</tspan><tspan x="430.0" y="1929.5">blocks</tspan></text>
+<rect x="290.0" y="1990.0" width="280.0" height="80.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="2019.5">Commit, push, open or update PR</tspan><tspan x="430.0" y="2034.5">draft + [Needs Work] label if rejected;</tspan><tspan x="430.0" y="2049.5">agent:warning label if warnings</tspan></text>
+<rect x="300.0" y="2120.0" width="260.0" height="60.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="2139.5">Comment on the Jira story: PR link(s),</tspan><tspan x="430.0" y="2154.5">or an</tspan><tspan x="430.0" y="2169.5">explanation if the run failed</tspan></text>
+<rect x="300.0" y="2220.0" width="260.0" height="60.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="2247.0">Send summary email with the PR link</tspan><tspan x="430.0" y="2262.0">(best-effort)</tspan></text>
+<rect x="330.0" y="2320.0" width="200.0" height="60.0" rx="30.0" ry="30.0" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.4"/>
+<text font-size="12" fill="#1a1a1a" text-anchor="middle"><tspan x="430.0" y="2354.5">Run recorded in /ui/runs</tspan></text>
+<text font-size="13" font-weight="bold" fill="#1a1a1a" text-anchor="start"><tspan x="38.0" y="280.0">Legend</tspan></text>
+<rect x="30.0" y="300.0" width="150.0" height="40.0" rx="6.0" ry="6.0" fill="#d5e8d4" stroke="#82b366" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="324.0">Process step</tspan></text>
+<rect x="30.0" y="350.0" width="150.0" height="40.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="374.0">AI-authored step</tspan></text>
+<rect x="30.0" y="400.0" width="150.0" height="40.0" rx="6.0" ry="6.0" fill="#fff2cc" stroke="#d6b656" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="424.0">LLM Judge (advisory)</tspan></text>
+<polygon points="105.0,450.0 180.0,475.0 105.0,500.0 30.0,475.0" fill="#ffe6cc" stroke="#d79b00" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="479.0">Decision</tspan></text>
+<rect x="30.0" y="510.0" width="150.0" height="40.0" rx="20.0" ry="20.0" fill="#f8cecc" stroke="#b85450" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="534.0">Early-exit run status</tspan></text>
+<rect x="30.0" y="560.0" width="150.0" height="40.0" rx="6.0" ry="6.0" fill="#e1d5e7" stroke="#9673a6" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="577.0">Optional / gated (off</tspan><tspan x="105.0" y="591.0">by default)</tspan></text>
+<rect x="30.0" y="610.0" width="150.0" height="40.0" rx="6.0" ry="6.0" fill="#eef4ff" stroke="#6c8ebf" stroke-dasharray="6,4" stroke-width="1.4"/>
+<text font-size="11" fill="#1a1a1a" text-anchor="middle"><tspan x="105.0" y="627.0">Alternate entry point</tspan><tspan x="105.0" y="641.0">(info)</tspan></text>
+</svg>

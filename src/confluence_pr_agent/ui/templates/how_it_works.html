@@ -86,6 +86,28 @@
     .journey-node:first-of-type { border-color: var(--accent-blue); background: var(--accent-blue); }
     .journey-caption:first-of-type { opacity: 1; }
   }
+
+  /* Full flow diagram, collapsed by default -- it's the complete diagram
+     (every branch: label/diff gates, the optional approval gate and its
+     poller loop, per-repo routing, the test+lint retry loop, judge), which
+     makes it considerably taller than the at-a-glance summary above, so it
+     stays tucked away unless someone actually wants the whole picture. */
+  .flow-diagram-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.15rem 0;
+    color: var(--text);
+  }
+  .flow-diagram-details > summary:hover { color: var(--accent-blue); }
+  .flow-diagram-scroll {
+    margin-top: 1rem;
+    overflow: auto;
+    max-height: 80vh;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+  }
+  .flow-diagram-scroll svg { display: block; }
 </style>
 
 <h1>How It Works</h1>
@@ -133,6 +155,13 @@
     <a href="/ui/runs">Pipeline Runs</a> page is a snapshot of this same diagram, live or
     finished.
   </p>
+
+  <details class="flow-diagram-details">
+    <summary>Full flow diagram (every branch, including the optional approval gate)</summary>
+    <div class="flow-diagram-scroll">
+      {% include "_flow_diagram.svg" %}
+    </div>
+  </details>
 </fieldset>
 
 <fieldset>
