@@ -293,9 +293,7 @@ async def plan_sprint_detail(request: Request, sprint_tag: str, username: str = 
     )
 
 
-async def _confirm_one_page(
-    settings, jira: JiraClient, page_store: PageStore, sp: SprintPlanPage, sprint_tag: str
-) -> str | None:
+async def _confirm_one_page(settings, jira: JiraClient, page_store: PageStore, sp: SprintPlanPage) -> str | None:
     """Shared by the "Confirm plan" (all) and "Confirm selected" (batch)
     actions -- creates or reuses this page's Jira story, mutating `sp` in
     place. The caller is responsible for plan_store.put(plan) once, after
@@ -335,6 +333,12 @@ async def _confirm_one_page(
             except Exception as exc:
                 logger.warning("Failed to refresh description for reused story %s: %s", jira_issue.key, exc)
         else:
+            # No follow-up "raw spec" comment here (unlike the single-page
+            # pipeline's Jira sync) -- the Implementation Plan section
+            # written by _write_implementation_plan_sections already covers
+            # everything a reviewer needs (summary, AC, file-level plan,
+            # and a Source line back to this page), so a second copy of the
+            # raw spec text would just be redundant bulk, not new signal.
             jira_issue = await jira.create_issue(
                 project_key=settings.jira_project_key,
                 issue_type=settings.jira_issue_type,
@@ -342,14 +346,6 @@ async def _confirm_one_page(
                 description=story.description,
                 acceptance_criteria=story.acceptance_criteria,
             )
-            try:
-                await jira.add_comment(
-                    jira_issue.key,
-                    f"Part of sprint `{sprint_tag}` (planned via Plan a Sprint). Full current spec, "
-                    f"as of v{sp['page_version']}:\n\n{sp['diff_text'][:8000]}",
-                )
-            except Exception as exc:
-                logger.warning("Failed to comment spec on new story %s: %s", jira_issue.key, exc)
 
         sp["jira_issue_key"] = jira_issue.key
         sp["jira_issue_url"] = jira_issue.url
@@ -397,16 +393,21 @@ def _group_file_changes(file_changes: list[dict]) -> dict[str, list[dict]]:
 
 
 def _build_plan_summary_lines(sp: SprintPlanPage, plan: SprintPlan, keys_by_page: dict[str, str | None]) -> list[str]:
-    """The non-file-level facts -- why, cross-repo impact, repo scope, this
-    story's position in the sprint's fixed order, and both directions of
-    the dependency relationship. Rendered above the per-repo file-change
-    sections (see _group_file_changes) rather than mixed into them. Jira
-    Cloud auto-links a bare "KAN-21"-shaped key in plain text, so a
-    resolved dependency reads as a clickable reference for free; an
-    unresolved one (not confirmed yet) says so explicitly rather than
-    silently omitting it.
+    """The non-file-level facts -- source page, why, cross-repo impact,
+    repo scope, this story's position in the sprint's fixed order, and
+    both directions of the dependency relationship. Rendered above the
+    per-repo file-change sections (see _group_file_changes) rather than
+    mixed into them. Jira Cloud auto-links a bare "KAN-21"-shaped key in
+    plain text, so a resolved dependency reads as a clickable reference
+    for free; an unresolved one (not confirmed yet) says so explicitly
+    rather than silently omitting it.
+
+    The Source line is the only place on the whole story that links back
+    to the Confluence page it came from -- neither generate_story_content's
+    LLM-written description nor anything else here does, so this can't be
+    dropped without losing that traceability entirely.
     """
-    lines: list[str] = []
+    lines: list[str] = [f"Source: {sp['page_url']} (v{sp['page_version']})"]
 
     if sp.get("rationale"):
         lines.append(f"Why: {sp['rationale']}")
@@ -484,7 +485,7 @@ async def plan_sprint_confirm(request: Request, sprint_tag: str, username: str =
         for sp in plan["pages"]:
             if sp["phase"] != "planned":
                 continue
-            error = await _confirm_one_page(settings, jira, page_store, sp, sprint_tag)
+            error = await _confirm_one_page(settings, jira, page_store, sp)
             if error:
                 errors.append(error)
         await _link_confirmed_dependencies(jira, plan)
@@ -531,7 +532,7 @@ async def plan_sprint_confirm_selected(
             if sp["phase"] != "planned":
                 errors.append(f"{sp['page_title']}: already {sp['phase']}, not planned.")
                 continue
-            error = await _confirm_one_page(settings, jira, page_store, sp, sprint_tag)
+            error = await _confirm_one_page(settings, jira, page_store, sp)
             if error:
                 errors.append(error)
             else:

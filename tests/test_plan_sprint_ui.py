@@ -338,13 +338,18 @@ async def test_confirm_one_page_creates_a_new_story_when_none_exists(tmp_path, m
     settings.jira_base_url = "https://x.atlassian.net"
     settings.jira_project_key = "SD"
     settings.jira_issue_type = "Story"
-    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp)
 
     assert error is None
     assert sp["phase"] == "confirmed"
     assert sp["jira_issue_key"] == "SD-9"
     jira.create_issue.assert_awaited_once()
-    jira.add_comment.assert_awaited_once()
+    # No follow-up comment -- see _confirm_one_page's docstring/comment:
+    # the raw spec dump was removed as redundant now that the
+    # Implementation Plan section (written later, once dependency links
+    # are known) already covers everything a reviewer needs, including a
+    # Source line back to this page.
+    jira.add_comment.assert_not_awaited()
     # remember_jira_issue is a merge, not an insert (see
     # storage/page_store.py) -- a page never seen by PageStore before (no
     # prior full record from a real pipeline run) correctly stays absent,
@@ -374,7 +379,7 @@ async def test_confirm_one_page_reuses_an_existing_open_story(tmp_path, monkeypa
     settings.jira_base_url = "https://x.atlassian.net"
     settings.jira_project_key = "SD"
     settings.jira_issue_type = "Story"
-    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp)
 
     assert error is None
     assert sp["phase"] == "confirmed"
@@ -403,7 +408,7 @@ async def test_confirm_one_page_returns_error_and_leaves_phase_unchanged_on_fail
     settings.jira_base_url = "https://x.atlassian.net"
     settings.jira_project_key = "SD"
     settings.jira_issue_type = "Story"
-    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp, "sprint-x")
+    error = await plan_sprint_module._confirm_one_page(settings, jira, page_store, sp)
 
     assert error is not None
     assert "Jira is down" in error
