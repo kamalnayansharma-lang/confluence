@@ -13,37 +13,43 @@
 </div>
 {% endif %}
 
-{% set any_planned = pages|selectattr("phase", "equalto", "planned")|list|length > 0 %}
-{% if any_planned %}
-<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" style="margin-bottom: 0.75rem;" id="confirm-form"
-      onsubmit="if (!confirm('Create/update a Jira story for EVERY still-planned page and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
-  <button type="submit" id="confirm-submit-btn">Confirm plan (all) &mdash; create stories + dependency links in Jira</button>
-  <span class="hint" id="confirm-status" style="display: none; margin-left: 0.5rem;">
-    &#9203; Creating/updating Jira stories and links&hellip;
-  </span>
-</form>
+{% set planned_count = pages|selectattr("phase", "equalto", "planned")|list|length %}
+{% if planned_count > 0 %}
+<fieldset>
+  <legend>Confirm ({{ planned_count }} planned)</legend>
+  <div class="filter-bar" style="margin-bottom: 0;">
+    <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" id="confirm-form"
+          onsubmit="if (!confirm('Create/update a Jira story for EVERY still-planned page (' + {{ planned_count }} + ') and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
+      <button type="submit" id="confirm-submit-btn">Confirm all &amp; push to Jira</button>
+      <span class="hint" id="confirm-status" style="display: none; margin-left: 0.5rem;">&#9203; Creating/updating&hellip;</span>
+    </form>
 
-<!-- Standalone form, referenced by each "planned" row's checkbox via the
-     `form` attribute -- checkboxes live inside table rows (which already
-     contain their own forms elsewhere), and HTML doesn't allow nesting a
-     <form> inside another <form>, so this is the one way to associate
-     inputs elsewhere in the DOM with a single submit button here. -->
-<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm-selected" id="confirm-selected-form"
-      style="margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
-      onsubmit="
-        var n = document.querySelectorAll('.row-select-planned:checked').length;
-        if (n === 0) { alert('Select at least one story first.'); return false; }
-        if (!confirm('Create/update a Jira story for ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + '?')) return false;
-        document.getElementById('confirm-selected-btn').disabled = true;
-        document.getElementById('confirm-selected-btn').textContent = 'Confirming…';
-        return true;">
-  <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
-    <input type="checkbox" id="select-all-planned-checkbox" onclick="document.querySelectorAll('.row-select-planned').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
-    Select all planned
-  </label>
-  <button type="submit" id="confirm-selected-btn">Confirm selected</button>
-  <span class="hint" id="selected-planned-count"></span>
-</form>
+    <span class="hint">or select specific stories below:</span>
+
+    <!-- Standalone form, referenced by each "planned" row's checkbox via
+         the `form` attribute -- checkboxes live inside table rows (which
+         already contain their own forms elsewhere), and HTML doesn't
+         allow nesting a <form> inside another <form>, so this is the one
+         way to associate inputs elsewhere in the DOM with a single submit
+         button here. -->
+    <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm-selected" id="confirm-selected-form"
+          style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
+          onsubmit="
+            var n = document.querySelectorAll('.row-select-planned:checked').length;
+            if (n === 0) { alert('Select at least one story first.'); return false; }
+            if (!confirm('Create/update a Jira story for ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + '?')) return false;
+            document.getElementById('confirm-selected-btn').disabled = true;
+            document.getElementById('confirm-selected-btn').textContent = 'Confirming…';
+            return true;">
+      <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
+        <input type="checkbox" id="select-all-planned-checkbox" onclick="document.querySelectorAll('.row-select-planned').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
+        Select all
+      </label>
+      <button type="submit" id="confirm-selected-btn">Confirm selected &amp; push to Jira</button>
+      <span class="hint" id="selected-planned-count"></span>
+    </form>
+  </div>
+</fieldset>
 <script>
   (function () {
     function updateCount() {
@@ -58,24 +64,27 @@
 </script>
 {% endif %}
 
-{% set any_confirmed = pages|selectattr("phase", "equalto", "confirmed")|list|length > 0 %}
-{% if any_confirmed %}
-<form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/approve-selected" id="approve-selected-form"
-      style="margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;"
-      onsubmit="
-        var n = document.querySelectorAll('.row-select-confirmed:checked').length;
-        if (n === 0) { alert('Select at least one story first.'); return false; }
-        if (!confirm('Move ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + ' to ' + {{ (approved_status_name|default('the approved status', true)) | tojson }} + '?')) return false;
-        document.getElementById('approve-selected-btn').disabled = true;
-        document.getElementById('approve-selected-btn').textContent = 'Approving…';
-        return true;">
-  <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
-    <input type="checkbox" id="select-all-confirmed-checkbox" onclick="document.querySelectorAll('.row-select-confirmed').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
-    Select all confirmed
-  </label>
-  <button type="submit" id="approve-selected-btn">Approve selected</button>
-  <span class="hint" id="selected-confirmed-count"></span>
-</form>
+{% set confirmed_count = pages|selectattr("phase", "equalto", "confirmed")|list|length %}
+{% if confirmed_count > 0 %}
+<fieldset>
+  <legend>Approve ({{ confirmed_count }} confirmed)</legend>
+  <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/approve-selected" id="approve-selected-form"
+        class="filter-bar" style="margin-bottom: 0;"
+        onsubmit="
+          var n = document.querySelectorAll('.row-select-confirmed:checked').length;
+          if (n === 0) { alert('Select at least one story first.'); return false; }
+          if (!confirm('Move ' + n + ' selected stor' + (n === 1 ? 'y' : 'ies') + ' to ' + {{ (approved_status_name|default('the approved status', true)) | tojson }} + '?')) return false;
+          document.getElementById('approve-selected-btn').disabled = true;
+          document.getElementById('approve-selected-btn').textContent = 'Approving…';
+          return true;">
+    <label style="display: flex; align-items: center; gap: 0.4rem; margin: 0;">
+      <input type="checkbox" id="select-all-confirmed-checkbox" onclick="document.querySelectorAll('.row-select-confirmed').forEach(function(cb) { cb.checked = this.checked; }.bind(this));">
+      Select all
+    </label>
+    <button type="submit" id="approve-selected-btn">Approve selected</button>
+    <span class="hint" id="selected-confirmed-count"></span>
+  </form>
+</fieldset>
 <script>
   (function () {
     function updateCount() {
@@ -129,6 +138,25 @@
             &#9888;&#65039; missing label{{ "s" if p.label_gap|length != 1 else "" }}:
             {% for lbl in p.label_gap %}<code>{{ lbl }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
           </div>
+        {% endif %}
+        {% if p.file_changes or p.rationale or p.cross_repo_impact %}
+          <details style="margin-top: 0.35rem;">
+            <summary class="hint" style="cursor: pointer;">Implementation plan (best-effort)</summary>
+            <div class="hint" style="margin-top: 0.35rem; padding-left: 0.75rem; border-left: 2px solid var(--border);">
+              {% if p.rationale %}<div><strong>Why:</strong> {{ p.rationale }}</div>{% endif %}
+              {% if p.cross_repo_impact %}<div style="margin-top: 0.3rem;"><strong>Cross-repo impact:</strong> {{ p.cross_repo_impact }}</div>{% endif %}
+              {% if p.file_changes %}
+                {% for repo_label, changes in p.file_changes|groupby("repo_label") %}
+                  <div style="margin-top: 0.5rem; font-weight: 600;">{{ repo_label }}</div>
+                  <ul style="margin: 0.2rem 0 0.4rem 1rem; padding: 0;">
+                    {% for fc in changes %}
+                      <li><code>{{ fc.file_path }}</code>{% if fc.is_new_file %} <span style="color: var(--success-text);">(new file)</span>{% endif %} &mdash; {{ fc.change }}</li>
+                    {% endfor %}
+                  </ul>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </details>
         {% endif %}
       </td>
       <td>

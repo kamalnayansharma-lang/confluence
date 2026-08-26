@@ -467,3 +467,136 @@ def test_plan_sprint_confirm_selected_rejects_empty_selection(client):
     )
     assert resp.status_code == 303
     assert "No%20stories%20selected" in resp.headers["location"]
+
+
+def test_group_file_changes_groups_by_repo_label_preserving_order():
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    file_changes = [
+        {"repo_label": "repo-api", "file_path": "src/api/cancel.py", "change": "Validate reason.", "is_new_file": False},
+        {"repo_label": "repo-ui", "file_path": "src/forms/cancel.tsx", "change": "Add field.", "is_new_file": True},
+        {"repo_label": "repo-api", "file_path": "src/models/appt.py", "change": "Add column.", "is_new_file": False},
+    ]
+
+    grouped = plan_sprint_module._group_file_changes(file_changes)
+
+    assert list(grouped.keys()) == ["repo-api", "repo-ui"]
+    assert len(grouped["repo-api"]) == 2
+    assert len(grouped["repo-ui"]) == 1
+    assert grouped["repo-api"][0]["file_path"] == "src/api/cancel.py"
+
+
+def test_build_plan_summary_lines_includes_repo_scope_order_and_dependency():
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    dependency = _planned_page("5001", "Schema change")
+    dependency["jira_issue_key"] = "KAN-50"
+    dependent = _planned_page("5002", "API change")
+    dependent.update(
+        depends_on_page_ids=["5001"],
+        dependency_rationale="Needs the new column from 5001.",
+        predicted_labels=["repo-api"],
+        rationale="The spec requires a reason to be captured and validated server-side.",
+        cross_repo_impact="The UI will need a form field for this, or requests will fail validation.",
+    )
+    plan = {"sprint_tag": "sprint-x", "order": ["5001", "5002"], "pages": [dependency, dependent]}
+    keys_by_page = {"5001": "KAN-50", "5002": None}
+
+    lines = plan_sprint_module._build_plan_summary_lines(dependent, plan, keys_by_page)
+
+    assert any("Why: The spec requires a reason" in line for line in lines)
+    assert any("Cross-repo impact: The UI will need a form field" in line for line in lines)
+    assert any("Repo(s) this story is expected to touch: repo-api" in line for line in lines)
+    assert any("Sprint position: step 2 of 2" in line for line in lines)
+    assert any("Depends on: KAN-50" in line and "Needs the new column from 5001." in line for line in lines)
+
+
+def test_build_plan_summary_lines_flags_unresolved_dependency_by_title():
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    dependency = _planned_page("6001", "Not yet confirmed dep")
+    dependent = _planned_page("6002", "Dependent story")
+    dependent["depends_on_page_ids"] = ["6001"]
+    plan = {"sprint_tag": "sprint-y", "order": ["6001", "6002"], "pages": [dependency, dependent]}
+    keys_by_page = {"6001": None, "6002": None}  # 6001 has no story yet
+
+    lines = plan_sprint_module._build_plan_summary_lines(dependent, plan, keys_by_page)
+
+    assert any('"Not yet confirmed dep" (not yet confirmed' in line for line in lines)
+
+
+async def test_write_implementation_plan_sections_updates_every_confirmed_page(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    sp = _planned_page("7001", "Story with plan")
+    sp["phase"] = "confirmed"
+    sp["jira_issue_key"] = "KAN-70"
+    sp["story_description"] = "Some description."
+    sp["story_acceptance_criteria"] = ["AC one"]
+    sp["file_changes"] = [
+        {"repo_label": "repo-api", "file_path": "src/api/cancel.py", "change": "Do the thing.", "is_new_file": False}
+    ]
+    plan = {"sprint_tag": "sprint-z", "order": ["7001"], "pages": [sp]}
+
+    jira = AsyncMock()
+    await plan_sprint_module._write_implementation_plan_sections(jira, plan)
+
+    jira.update_description.assert_awaited_once()
+    call = jira.update_description.await_args
+    assert call.args[0] == "KAN-70"
+    assert call.args[1] == "Some description."
+    assert call.args[2] == ["AC one"]
+    assert "repo-api" in call.kwargs["file_changes_by_repo"]
+    assert call.kwargs["file_changes_by_repo"]["repo-api"][0]["file_path"] == "src/api/cancel.py"
+
+
+async def test_write_implementation_plan_sections_skips_pages_without_a_story(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from confluence_pr_agent.ui import plan_sprint as plan_sprint_module
+
+    sp = _planned_page("7002", "Not confirmed yet")  # no jira_issue_key
+    plan = {"sprint_tag": "sprint-z", "order": ["7002"], "pages": [sp]}
+
+    jira = AsyncMock()
+    await plan_sprint_module._write_implementation_plan_sections(jira, plan)
+
+    jira.update_description.assert_not_awaited()
+
+
+def test_plan_sprint_detail_renders_grouped_implementation_plan(client):
+    """End-to-end template check: file_changes render grouped by repo_label
+    (a heading per repo, its own bullet list under it), inside a <details>
+    disclosure under the story title, not bloating the table by default.
+    """
+    settings = get_settings("testuser")
+    store = SprintPlanStore(settings.sprint_plan_store_path)
+    page = _planned_page("8001", "Story with a real plan")
+    page.update(
+        file_changes=[
+            {"repo_label": "repo-api", "file_path": "src/api/booking.py", "change": "Add validation.", "is_new_file": False},
+            {"repo_label": "repo-ui", "file_path": "src/forms/Booking.tsx", "change": "Add a field.", "is_new_file": True},
+        ],
+        rationale="This is required because the spec says so.",
+        cross_repo_impact="The UI repo also needs a corresponding change.",
+    )
+    store.put(
+        SprintPlan(
+            sprint_tag="sprint-details", gate_label="brd", space_key="SD",
+            created_at="2026-01-01T00:00:00+00:00", order=["8001"], pages=[page],
+        )
+    )
+
+    resp = client.get("/ui/plan-sprint/sprint-details")
+    assert resp.status_code == 200
+    assert "Implementation plan (best-effort)" in resp.text
+    # Grouped: each repo appears once as its own heading, not interleaved.
+    assert resp.text.count(">repo-api<") == 1
+    assert resp.text.count(">repo-ui<") == 1
+    assert "src/api/booking.py" in resp.text
+    assert "src/forms/Booking.tsx" in resp.text
+    assert "(new file)" in resp.text
+    assert "This is required because the spec says so." in resp.text
+    assert "The UI repo also needs a corresponding change." in resp.text

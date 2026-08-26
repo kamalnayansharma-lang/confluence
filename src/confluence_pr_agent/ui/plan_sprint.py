@@ -17,6 +17,7 @@ from __future__ import annotations
 import html
 import logging
 import re
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from confluence_pr_agent.jira.sprint_dependency import DependencyCycleError, top
 from confluence_pr_agent.jira.sprint_planner import generate_sprint_plan
 from confluence_pr_agent.jira.story_writer import generate_story_content
 from confluence_pr_agent.models import JiraIssueResult, PageDiff, PageSnapshot
+from confluence_pr_agent.repo.github_client import GitHubClient
 from confluence_pr_agent.storage.page_store import PageStore
 from confluence_pr_agent.storage.sprint_plan_store import SprintPlan, SprintPlanPage, SprintPlanStore
 from confluence_pr_agent.ui.auth import current_username
@@ -122,6 +124,30 @@ async def plan_sprint_index(request: Request, username: str = Depends(current_us
     )
 
 
+async def _fetch_repo_trees(settings, repo_targets) -> dict[str, list[str]]:
+    """One GitHub API call per configured repo (not a clone) -- see
+    GitHubClient.get_repo_file_tree's docstring for why this is real repo
+    signal, not a guess. Best-effort per repo: a private/renamed/deleted
+    repo, or no GITHUB_TOKEN configured, degrades that repo's entry to
+    "not fetched" rather than failing the whole Plan action -- the planner
+    already treats a missing tree as an explicit "unverified" signal, not
+    an error.
+    """
+    if not settings.github_token:
+        return {}
+    github = GitHubClient(settings.github_token)
+    trees: dict[str, list[str]] = {}
+    try:
+        for rt in repo_targets:
+            try:
+                trees[rt.target_repo] = await github.get_repo_file_tree(rt.target_repo, rt.base_branch)
+            except Exception as exc:
+                logger.warning("Could not fetch file tree for %s: %s", rt.target_repo, exc)
+    finally:
+        await github.aclose()
+    return trees
+
+
 @router.post("/ui/plan-sprint/plan")
 async def plan_sprint_run(request: Request, sprint_tag: str = Form(...), username: str = Depends(current_username)):
     settings = get_settings(username)
@@ -155,7 +181,8 @@ async def plan_sprint_run(request: Request, sprint_tag: str = Form(...), usernam
             # elsewhere below (Confirm's story-reuse check), just not here.
             diffs.append(build_full_spec_diff(page))
 
-        plan_content = await generate_sprint_plan(settings, diffs, repo_targets)
+        repo_trees = await _fetch_repo_trees(settings, repo_targets)
+        plan_content = await generate_sprint_plan(settings, diffs, repo_targets, repo_trees)
         predictions = {p.page_id: p for p in plan_content.pages}
 
         depends_on = {
@@ -196,6 +223,9 @@ async def plan_sprint_run(request: Request, sprint_tag: str = Form(...), usernam
                     label_gap=label_gap,
                     depends_on_page_ids=prediction.depends_on_page_ids if prediction else [],
                     dependency_rationale=prediction.dependency_rationale if prediction else "",
+                    file_changes=[asdict(fc) for fc in prediction.file_changes] if prediction else [],
+                    rationale=prediction.rationale if prediction else "",
+                    cross_repo_impact=prediction.cross_repo_impact if prediction else "",
                     phase="planned",
                 )
             )
@@ -288,8 +318,23 @@ async def _confirm_one_page(
             except Exception as exc:
                 logger.warning("Could not check existing story %s for page %s: %s", existing_key, sp["page_id"], exc)
 
-        if jira_issue is None:
-            story = await generate_story_content(settings, diff)
+        # Generated either way (create or reuse) -- same reasoning as
+        # pipeline/orchestrator.py's single-page flow: a reused story's
+        # description gets refreshed to the current spec, and either way
+        # story_description/story_acceptance_criteria need to be persisted
+        # on `sp` so _write_implementation_plan_sections can rebuild the
+        # FULL description (not just append) once dependency links are
+        # known, without a second LLM call at that point.
+        story = await generate_story_content(settings, diff)
+        sp["story_description"] = story.description
+        sp["story_acceptance_criteria"] = story.acceptance_criteria
+
+        if jira_issue is not None:
+            try:
+                await jira.update_description(jira_issue.key, story.description, story.acceptance_criteria)
+            except Exception as exc:
+                logger.warning("Failed to refresh description for reused story %s: %s", jira_issue.key, exc)
+        else:
             jira_issue = await jira.create_issue(
                 project_key=settings.jira_project_key,
                 issue_type=settings.jira_issue_type,
@@ -338,6 +383,94 @@ async def _link_confirmed_dependencies(jira: JiraClient, plan: SprintPlan) -> No
                 logger.warning("Failed to link %s -> %s: %s", to_key, from_key, exc)
 
 
+def _group_file_changes(file_changes: list[dict]) -> dict[str, list[dict]]:
+    """repo_label -> its own file_changes, in first-seen order -- so a
+    reviewer sees "what's changing in repo-api" as one block, then
+    "repo-ui" as another, instead of the flat interleaved list
+    jira/sprint_planner.py returns them in (its own per-page order isn't
+    grouped by repo).
+    """
+    grouped: dict[str, list[dict]] = {}
+    for fc in file_changes:
+        grouped.setdefault(fc.get("repo_label") or "(unspecified repo)", []).append(fc)
+    return grouped
+
+
+def _build_plan_summary_lines(sp: SprintPlanPage, plan: SprintPlan, keys_by_page: dict[str, str | None]) -> list[str]:
+    """The non-file-level facts -- why, cross-repo impact, repo scope, this
+    story's position in the sprint's fixed order, and both directions of
+    the dependency relationship. Rendered above the per-repo file-change
+    sections (see _group_file_changes) rather than mixed into them. Jira
+    Cloud auto-links a bare "KAN-21"-shaped key in plain text, so a
+    resolved dependency reads as a clickable reference for free; an
+    unresolved one (not confirmed yet) says so explicitly rather than
+    silently omitting it.
+    """
+    lines: list[str] = []
+
+    if sp.get("rationale"):
+        lines.append(f"Why: {sp['rationale']}")
+    if sp.get("cross_repo_impact"):
+        lines.append(f"Cross-repo impact: {sp['cross_repo_impact']}")
+
+    if sp["predicted_labels"]:
+        lines.append("Repo(s) this story is expected to touch: " + ", ".join(sp["predicted_labels"]))
+
+    order = plan.get("order") or []
+    if sp["page_id"] in order:
+        lines.append(f"Sprint position: step {order.index(sp['page_id']) + 1} of {len(order)} in `{plan['sprint_tag']}`.")
+
+    for dep_id in sp["depends_on_page_ids"]:
+        dep = next((p for p in plan["pages"] if p["page_id"] == dep_id), None)
+        dep_key = keys_by_page.get(dep_id)
+        title = dep["page_title"] if dep else dep_id
+        ref = dep_key if dep_key else f'"{title}" (not yet confirmed -- no Jira story exists for it yet)'
+        line = f"Depends on: {ref}"
+        if sp["dependency_rationale"]:
+            line += f" -- {sp['dependency_rationale']}"
+        lines.append(line)
+
+    blocked_ids = [p["page_id"] for p in plan["pages"] if sp["page_id"] in p["depends_on_page_ids"]]
+    for blocked_id in blocked_ids:
+        blocked = next((p for p in plan["pages"] if p["page_id"] == blocked_id), None)
+        blocked_key = keys_by_page.get(blocked_id)
+        title = blocked["page_title"] if blocked else blocked_id
+        ref = blocked_key if blocked_key else f'"{title}" (not yet confirmed)'
+        lines.append(f"Blocks: {ref}")
+
+    return lines
+
+
+async def _write_implementation_plan_sections(jira: JiraClient, plan: SprintPlan) -> None:
+    """Refreshes the Implementation Plan section on every currently-
+    confirmed-or-later page's story -- run after _link_confirmed_
+    dependencies, once this batch's dependency keys are as complete as
+    they're going to get, so "Depends on"/"Blocks" reference real Jira
+    keys wherever possible instead of "not yet confirmed" placeholders
+    that were only accurate a moment earlier in the same request.
+    Best-effort per page: one page's failure here doesn't roll back its
+    already-successful story creation, or block the rest of the batch.
+    """
+    keys_by_page = {sp["page_id"]: sp.get("jira_issue_key") for sp in plan["pages"]}
+    for sp in plan["pages"]:
+        if not sp.get("jira_issue_key") or "story_description" not in sp:
+            continue
+        summary_lines = _build_plan_summary_lines(sp, plan, keys_by_page)
+        grouped = _group_file_changes(sp.get("file_changes") or [])
+        if not summary_lines and not grouped:
+            continue
+        try:
+            await jira.update_description(
+                sp["jira_issue_key"],
+                sp["story_description"],
+                sp.get("story_acceptance_criteria") or [],
+                plan_summary=summary_lines,
+                file_changes_by_repo=grouped,
+            )
+        except Exception as exc:
+            logger.warning("Failed to write Implementation Plan section on %s: %s", sp["jira_issue_key"], exc)
+
+
 @router.post("/ui/plan-sprint/{sprint_tag}/confirm")
 async def plan_sprint_confirm(request: Request, sprint_tag: str, username: str = Depends(current_username)):
     settings = get_settings(username)
@@ -355,6 +488,7 @@ async def plan_sprint_confirm(request: Request, sprint_tag: str, username: str =
             if error:
                 errors.append(error)
         await _link_confirmed_dependencies(jira, plan)
+        await _write_implementation_plan_sections(jira, plan)
         plan_store.put(plan)
     except Exception as exc:
         logger.exception("Confirming sprint plan %s failed", sprint_tag)
@@ -403,6 +537,7 @@ async def plan_sprint_confirm_selected(
             else:
                 confirmed_count += 1
         await _link_confirmed_dependencies(jira, plan)
+        await _write_implementation_plan_sections(jira, plan)
         plan_store.put(plan)
     except Exception as exc:
         logger.exception("Confirming selected pages in sprint %s failed", sprint_tag)

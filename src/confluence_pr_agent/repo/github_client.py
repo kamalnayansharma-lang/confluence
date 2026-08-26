@@ -114,3 +114,23 @@ class GitHubClient:
         resp.raise_for_status()
         data = resp.json()
         return [item["name"] for item in data] if isinstance(data, list) else []
+
+    async def get_repo_file_tree(self, owner_repo: str, branch: str = "main", limit: int = 400) -> list[str]:
+        """Every file path in the repo, via the Git Trees API's recursive
+        mode -- one API call, no clone, no file contents. Used by
+        jira/sprint_planner.py (through ui/plan_sprint.py) to ground the
+        planning agent's file-level predictions in the repo's REAL layout
+        instead of guessing plausible-sounding paths from spec text alone.
+
+        Capped at `limit` paths (sorted, so the cap is deterministic, not an
+        arbitrary API-order slice) -- this rides along in an LLM prompt, not
+        meant to represent every path in a very large repo, just enough
+        structure to ground path predictions. Blob (file) entries only, not
+        directories -- a path list is more useful to an LLM than a tree with
+        directory markers mixed in.
+        """
+        resp = await self._client.get(f"/repos/{owner_repo}/git/trees/{branch}", params={"recursive": "1"})
+        resp.raise_for_status()
+        data = resp.json()
+        paths = sorted(item["path"] for item in data.get("tree", []) if item.get("type") == "blob")
+        return paths[:limit]

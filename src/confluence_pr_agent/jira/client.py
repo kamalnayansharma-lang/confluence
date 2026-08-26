@@ -74,18 +74,38 @@ class JiraClient:
         return JiraIssueResult(key=key, url=self._issue_url(key))
 
     async def update_description(
-        self, issue_key: str, description: str, acceptance_criteria: list[str] | None = None
+        self,
+        issue_key: str,
+        description: str,
+        acceptance_criteria: list[str] | None = None,
+        plan_summary: list[str] | None = None,
+        file_changes_by_repo: dict[str, list[dict]] | None = None,
     ) -> None:
         """Refreshes an existing (reused) story's description in place, so it
         reflects the latest spec state instead of staying stuck with whatever
         it said when the story was first created. See pipeline/orchestrator.py
         -- called on the reuse path, alongside a comment recording the exact
         diff, same as a brand-new story gets.
+
+        `plan_summary`/`file_changes_by_repo`, when given, add/refresh a
+        distinct Implementation Plan section below Acceptance Criteria --
+        see ui/plan_sprint.py::_build_plan_summary_lines and
+        _group_file_changes. Used by "Plan a Sprint" once a batch's
+        dependency links are known (not available at story-creation time,
+        since other pages in the same batch may not have a story key yet),
+        so the plan section gets written here, as a follow-up update, not
+        baked into the initial create_issue call.
         """
         resp = await self._client.put(
             f"{self._base_url}/rest/api/{API_VERSION}/issue/{issue_key}",
             auth=self._auth,
-            json={"fields": {"description": build_story_description_adf(description, acceptance_criteria or [])}},
+            json={
+                "fields": {
+                    "description": build_story_description_adf(
+                        description, acceptance_criteria or [], plan_summary, file_changes_by_repo
+                    )
+                }
+            },
         )
         resp.raise_for_status()
 

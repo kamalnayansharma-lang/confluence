@@ -40,8 +40,26 @@ class SprintPlanPage(TypedDict):
     label_gap: list[str]
     depends_on_page_ids: list[str]
     dependency_rationale: str
+    # Best-effort technical plan from jira/sprint_planner.py -- grounded in
+    # each repo's real file tree where GitHubClient.get_repo_file_tree
+    # could fetch one (see ui/plan_sprint.py), but never verified against
+    # actual file contents, since no repo is cloned at planning time -- see
+    # that module's SYSTEM_PROMPT. Each entry: {repo_label, file_path,
+    # change, is_new_file}. Grouped by repo_label for display -- see
+    # ui/plan_sprint.py::_group_file_changes. Surfaced in both this UI and
+    # the Jira story's Implementation Plan section.
+    file_changes: list[dict]
+    rationale: str
+    cross_repo_impact: str
     jira_issue_key: NotRequired[str | None]
     jira_issue_url: NotRequired[str | None]
+    # Persisted from jira/story_writer.py's output so the Implementation
+    # Plan section (ui/plan_sprint.py::_write_implementation_plan_sections)
+    # can rebuild the FULL description -- not just append -- when it runs
+    # as a follow-up update after dependency links are known. Absent for
+    # any page confirmed before this field existed.
+    story_description: NotRequired[str]
+    story_acceptance_criteria: NotRequired[list[str]]
     # "planned" (dry run only) -> "confirmed" (story+links written to Jira)
     # -> "approved" (JIRA_APPROVED_STATUS_NAME reached) -> "in_progress" ->
     # "waiting_on_merge" -> "done" -- see pipeline/sprint_runner.py for who
