@@ -77,14 +77,20 @@
     {% endfor %}
   </div>
 
+  {# Which of these have a live "Test connection" call wired up in
+     POST /ui/test-connection/{service} (routes.py) -- distinct from
+     is_engine_credential below, which is "does this field belong to some
+     engine and need show/hide by selection" and includes engines (e.g.
+     Kiro) with no live-testable endpoint yet. #}
   {% set engine_key_service = {"ANTHROPIC_API_KEY": "anthropic", "CURSOR_API_KEY": "cursor", "OPENAI_API_KEY": "openai", "GEMINI_API_KEY": "gemini"} %}
+  {% set engine_credential_keys = engine_credential_by_engine.values() | select | list %}
   {% for group_name, items in groups.items() %}
   {% set slug = group_name | lower | replace(" ", "-") %}
   <fieldset class="tab-panel" data-tab-panel="{{ slug }}">
     <legend>{{ group_name }}</legend>
     {% for item in items %}
       {% set f = item.field %}
-      {% set is_engine_credential = f.key in engine_key_service %}
+      {% set is_engine_credential = f.key in engine_credential_keys %}
       {% set is_repo_credential = f.key == "GITHUB_TOKEN" %}
       <div {% if is_engine_credential %}class="engine-fields" data-engine-key="{{ f.key }}"{% elif is_repo_credential %}class="repo-fields" data-repo-key="{{ f.key }}"{% endif %}>
         <label for="{{ f.key }}">
@@ -121,7 +127,7 @@
             autocomplete="off">
         {% endif %}
         {% if f.help_text %}<div class="hint">{{ f.help_text }}</div>{% endif %}
-        {% if is_engine_credential %}
+        {% if f.key in engine_key_service %}
           <div class="test-connection">
             <button type="button" class="btn-test-connection test-connection-btn" data-service="{{ engine_key_service[f.key] }}"
                     data-payload='{"api_key": "{{ f.key }}"}'>
