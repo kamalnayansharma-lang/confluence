@@ -100,18 +100,24 @@ async def _advance_ready_page(settings: Settings, plan_store: SprintPlanStore, p
         opened = [r for r in result.repo_results if r.pull_request]
         if not opened:
             logger.warning(
-                "Sprint %s page %s implementation produced no PR (status=%s) -- leaving it approved for a "
-                "manual retry rather than silently blocking the rest of the sprint.",
+                "Sprint %s page %s implementation produced no PR (status=%s) -- marking failed. A human "
+                "must retry it explicitly (Sprint Planning); the scan loop won't re-attempt it on its own, "
+                "since that would silently re-spend a real LLM call every tick.",
                 plan["sprint_tag"], page["page_id"], result.status,
             )
-            page["phase"] = "approved"
+            page["phase"] = "failed"
+            page["last_error"] = f"No PR opened (status={result.status}). See Runs for this page for details."
         else:
             page["merge_pending"] = [{"target_repo": r.target_repo, "pr_number": r.pull_request.number} for r in opened]
             page["phase"] = "waiting_on_merge"
+            page["last_error"] = None
         plan_store.put(plan)
-    except Exception:
+    except Exception as exc:
         logger.exception("Sprint %s page %s implementation failed", plan["sprint_tag"], page["page_id"])
-        page["phase"] = "approved"  # eligible for a retry next tick rather than stuck
+        # "failed", not "approved" -- see the phase docstring in
+        # storage/sprint_plan_store.py for why this must NOT be auto-retried.
+        page["phase"] = "failed"
+        page["last_error"] = str(exc)
         plan_store.put(plan)
     finally:
         await deps.confluence.aclose()
@@ -147,14 +153,61 @@ async def _check_merge_status(settings: Settings, plan_store: SprintPlanStore, p
         await deps.jira.aclose()
 
 
+async def _check_confirmed_approvals(settings: Settings, plan_store: SprintPlanStore, plan: SprintPlan) -> None:
+    """Mirrors pipeline/approval_poller.py's own live-status check, for
+    sprint-planned pages: a story can be approved directly in Jira (not just
+    via this app's own per-row/batch Approve button in Sprint Planning),
+    which only updates the real Jira ticket -- nothing here notices unless
+    something independently checks Jira's live status. Without this,
+    _next_ready_page's `phase == "approved"` gate never advances for a page
+    approved this way, since that field is a local cache this module itself
+    only ever wrote when someone clicked Approve *in this app*; a story
+    approved directly in Jira left it stuck at "confirmed" forever.
+    """
+    approved_name = settings.jira_approved_status_name.strip().lower()
+    if not approved_name:
+        return
+    deps = build_deps(settings)
+    changed = False
+    try:
+        for page in plan["pages"]:
+            if page["phase"] != "confirmed" or not page.get("jira_issue_key"):
+                continue
+            try:
+                status = await deps.jira.get_issue_status(page["jira_issue_key"])
+            except Exception as exc:
+                logger.warning(
+                    "Could not check Jira status of %s for sprint %s page %s: %s",
+                    page["jira_issue_key"], plan["sprint_tag"], page["page_id"], exc,
+                )
+                continue
+            if status.status_name.strip().lower() == approved_name:
+                logger.info(
+                    "Sprint %s page %s: story %s reached %r directly in Jira; marking approved.",
+                    plan["sprint_tag"], page["page_id"], page["jira_issue_key"], status.status_name,
+                )
+                page["phase"] = "approved"
+                changed = True
+        if changed:
+            plan_store.put(plan)
+    finally:
+        await deps.confluence.aclose()
+        await deps.github.aclose()
+        await deps.email_client.aclose()
+        await deps.jira.aclose()
+
+
 async def check_sprint_plans(settings: Settings) -> None:
-    """One check cycle for one user: advance the next ready page in every
-    plan that has one, and check merge status for every page currently
-    waiting on one. Sequential across plans -- sprint execution is
-    deliberately not a race for throughput.
+    """One check cycle for one user: sync any directly-in-Jira approvals,
+    advance the next ready page in every plan that has one, and check merge
+    status for every page currently waiting on one. Sequential across plans
+    -- sprint execution is deliberately not a race for throughput.
     """
     plan_store = SprintPlanStore(settings.sprint_plan_store_path)
     for plan in plan_store.list_all():
+        await _check_confirmed_approvals(settings, plan_store, plan)
+        plan = plan_store.get(plan["sprint_tag"]) or plan
+
         for page in plan["pages"]:
             if page["phase"] == "waiting_on_merge":
                 await _check_merge_status(settings, plan_store, plan, page)

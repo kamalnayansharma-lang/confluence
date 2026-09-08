@@ -320,8 +320,17 @@ async def detect_test_command_route(repo: str, username: str = Depends(current_u
 
 def _http_error_message(exc: httpx.HTTPStatusError) -> str:
     status = exc.response.status_code
-    if status in (401, 403):
+    if status == 401:
         return "Authentication failed — check the credentials."
+    if status == 403:
+        # Distinct from 401 on purpose -- Atlassian returns this when the
+        # email/token pair is genuinely valid (auth succeeded) but the
+        # account has no product access grant on this site (e.g. a Jira
+        # seat but no Confluence one, or vice versa) -- confirmed live
+        # against a real "correct" token that failed with exactly this.
+        # Telling someone to "check the credentials" here sends them
+        # chasing a token rotation that was never the problem.
+        return "Credentials are valid, but this account doesn't have access to this product on this site — check product access in Atlassian admin, not the token."
     if status == 404:
         return "Not found — check the URL/key."
     return f"Request failed (HTTP {status})."

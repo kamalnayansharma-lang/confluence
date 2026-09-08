@@ -198,7 +198,12 @@
           &mdash;
         {% endif %}
       </td>
-      <td><span class="badge badge-no_repo_matched">{{ p.phase }}</span></td>
+      <td>
+        <span class="badge {{ 'badge-error' if p.phase == 'failed' else 'badge-no_repo_matched' }}">{{ p.phase }}</span>
+        {% if p.phase == "failed" and p.last_error %}
+          <div class="hint" style="color: var(--error-text); max-width: 220px;" title="{{ p.last_error }}">{{ p.last_error }}</div>
+        {% endif %}
+      </td>
       <td>
         {% if p.phase == "confirmed" %}
         <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/pages/{{ p.page_id }}/approve"
@@ -207,6 +212,11 @@
         </form>
         {% elif p.phase == "approved" %}
           <span class="hint">Waiting on pipeline/sprint_runner.py</span>
+        {% elif p.phase == "failed" %}
+        <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/pages/{{ p.page_id }}/retry"
+              onsubmit="if (!confirm('Re-arm this story for the pipeline\'s next run? This spends a real LLM call, so it only happens when you ask for it.')) return false; this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Retrying…'; return true;">
+          <button type="submit" class="btn-danger" style="padding: 0.4rem 1rem; font-size: 0.8rem;">Retry</button>
+        </form>
         {% endif %}
       </td>
     </tr>

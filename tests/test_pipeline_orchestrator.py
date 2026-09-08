@@ -23,6 +23,7 @@ from confluence_pr_agent.pipeline.orchestrator import PipelineDeps, build_deps, 
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
 from confluence_pr_agent.storage.pending_approval_store import PendingApproval, PendingApprovalStore
 from confluence_pr_agent.storage.run_store import RunStore
+from confluence_pr_agent.storage.sprint_plan_store import SprintPlanStore
 
 
 def _page(version: int, body: str = "<p>spec</p>", labels: list[str] | None = None) -> PageSnapshot:
@@ -492,6 +493,84 @@ async def test_jira_reuses_still_open_story_instead_of_creating_a_new_one(settin
     stored = deps.store.get("123456")
     assert stored is not None
     assert stored["jira_issue_key"] == "SD-9"
+
+
+async def test_jira_reuses_a_story_created_via_sprint_planning(settings, monkeypatch):
+    """Regression test: a page whose story was created via Sprint Planning
+    (SprintPlanStore) rather than through this pipeline's own reuse
+    tracking (PageStore) has NO PageStore record at all. Retriggering that
+    page (poll/webhook/manual retrigger, no `resume`) must still find and
+    reuse that story instead of creating a duplicate -- confirmed live:
+    retriggering page 5898241 (story KAN-33) created a second story, KAN-55.
+    """
+    _enable_jira(settings)
+    page = _page(2, body="<p>spec v2</p>")
+    deps = _make_deps(settings, page=page)
+    # No deps.store.put(...) here -- PageStore has never heard of this page.
+    plan_store = SprintPlanStore(settings.sprint_plan_store_path)
+    plan_store.put({
+        "sprint_tag": "sprint-24",
+        "gate_label": "",
+        "space_key": "SD",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "pages": [{"page_id": "123456", "jira_issue_key": "KAN-33"}],
+        "order": ["123456"],
+    })
+    deps.jira.get_issue_status.return_value = JiraIssueStatus(
+        key="KAN-33", status_name="In Progress", status_category="indeterminate"
+    )
+
+    async def _fake_run_tests(repo_dir, command):
+        return RepoTestResult(passed=True, output="2 passed", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
+    assert result.jira_issue is not None
+    assert result.jira_issue.key == "KAN-33"
+    assert result.jira_reused is True
+    deps.jira.create_issue.assert_not_called()
+
+
+async def test_jira_story_visible_in_the_live_run_before_the_pipeline_finishes(settings, monkeypatch):
+    """Regression test: RunStore.upsert_run REPLACES the whole record every
+    call (see its own docstring) -- mark_stage() has to re-include every
+    already-known field on each call, or it gets wiped. jira_issue_key/url/
+    reused weren't included, so a still-running run's "Progress" view (run
+    detail page) showed a blank Jira Story step for the story's whole
+    lifetime -- confirmed live -- only filling in once the pipeline
+    finished and finish() wrote the terminal record.
+    """
+    _enable_jira(settings)
+    page = _page(2, body="<p>spec v2</p>")
+    deps = _make_deps(settings, page=page)
+    deps.store.put(_stored(1, "<p>spec v1</p>", page.url, jira_issue_key="SD-9"))
+    deps.jira.get_issue_status.return_value = JiraIssueStatus(
+        key="SD-9", status_name="In Progress", status_category="indeterminate"
+    )
+
+    observed_mid_run = {}
+
+    async def _clone_side_effect(*args, **kwargs):
+        runs = deps.run_store.list_runs()
+        if runs:
+            observed_mid_run["jira_issue_key"] = runs[0]["jira_issue_key"]
+            observed_mid_run["jira_reused"] = runs[0]["jira_reused"]
+
+    deps.git.clone.side_effect = _clone_side_effect
+
+    async def _fake_run_tests(repo_dir, command):
+        return RepoTestResult(passed=True, output="2 passed", command=command)
+
+    monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+
+    result = await run_pipeline("123456", deps=deps)
+
+    assert result.status == "opened_pr"
+    assert observed_mid_run["jira_issue_key"] == "SD-9"
+    assert observed_mid_run["jira_reused"] is True
 
 
 async def test_jira_story_survives_a_follow_up_comment_failure(settings, monkeypatch):

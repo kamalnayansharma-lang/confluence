@@ -614,6 +614,41 @@ async def plan_sprint_approve_page(
     return RedirectResponse(url=url, status_code=303)
 
 
+@router.post("/ui/plan-sprint/{sprint_tag}/pages/{page_id}/retry")
+async def plan_sprint_retry_page(
+    request: Request, sprint_tag: str, page_id: str, username: str = Depends(current_username)
+):
+    """Manually re-arms a "failed" page for pipeline/sprint_runner.py's next
+    scan tick by moving it back to "approved" -- see that module's phase
+    docstring for why this must be an explicit human action rather than
+    something the scan loop does on its own: a failed attempt already spent
+    a real LLM call, and auto-retrying every tick would silently keep
+    spending more. No Jira call here (unlike approve) -- the story is
+    already in the approved status; only this app's local phase changed.
+    """
+    settings = get_settings(username)
+    _, _, _, plan_store = _clients(settings)
+    plan = plan_store.get(sprint_tag)
+    if plan is None:
+        return RedirectResponse(url="/ui/plan-sprint?error=No such plan.", status_code=303)
+
+    page = next((p for p in plan["pages"] if p["page_id"] == page_id), None)
+    error = None
+    if page is None:
+        error = f"{page_id}: not found in this plan."
+    elif page["phase"] != "failed":
+        error = f"{page['page_title']} isn't in a failed state (currently {page['phase']!r})."
+    else:
+        page["phase"] = "approved"
+        page["last_error"] = None
+        plan_store.put(plan)
+
+    url = f"/ui/plan-sprint/{sprint_tag}"
+    if error:
+        url += f"?error={error}"
+    return RedirectResponse(url=url, status_code=303)
+
+
 @router.post("/ui/plan-sprint/{sprint_tag}/approve-selected")
 async def plan_sprint_approve_selected(
     request: Request, sprint_tag: str, page_ids: list[str] = Form(default=[]), username: str = Depends(current_username)

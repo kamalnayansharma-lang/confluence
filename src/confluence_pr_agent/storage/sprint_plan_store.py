@@ -63,8 +63,20 @@ class SprintPlanPage(TypedDict):
     # "planned" (dry run only) -> "confirmed" (story+links written to Jira)
     # -> "approved" (JIRA_APPROVED_STATUS_NAME reached) -> "in_progress" ->
     # "waiting_on_merge" -> "done" -- see pipeline/sprint_runner.py for who
-    # drives which transition.
+    # drives which transition. "in_progress" can also land on "failed"
+    # instead of "waiting_on_merge" (implementation raised, or produced no
+    # PR) -- deliberately NOT auto-picked-up again by
+    # sprint_runner.py::_next_ready_page (only "approved" is), since a
+    # failed run already burned one real agentic/LLM attempt: a human must
+    # explicitly retry it (POST .../pages/{id}/retry, which moves it back
+    # to "approved") rather than the scan loop silently re-attempting it
+    # (and re-spending LLM cost) every tick.
     phase: str
+    # Set when phase becomes "failed", cleared on retry -- see
+    # pipeline/sprint_runner.py::_advance_ready_page. Short human-readable
+    # reason; the full RunRecord (with logs/diagnostics) is still in Runs,
+    # keyed by this page's page_id, for anyone who needs more than this.
+    last_error: NotRequired[str | None]
     # {target_repo, pr_number} per repo this page's implementation opened a
     # PR in -- set when phase becomes "waiting_on_merge", polled by
     # pipeline/sprint_runner.py (GitHubClient.get_pull_request) until every

@@ -150,7 +150,7 @@ async def test_advance_ready_page_moves_to_waiting_on_merge_when_a_pr_opens(sett
     assert updated["pages"][0]["merge_pending"] == [{"target_repo": "acme/api", "pr_number": 9}]
 
 
-async def test_advance_ready_page_falls_back_to_approved_when_no_pr_opens(settings, monkeypatch):
+async def test_advance_ready_page_marks_failed_when_no_pr_opens(settings, monkeypatch):
     plan_store = SprintPlanStore(settings.sprint_plan_store_path)
     plan = _plan([_page("1", "approved")], order=["1"])
     plan_store.put(plan)
@@ -166,4 +166,29 @@ async def test_advance_ready_page_falls_back_to_approved_when_no_pr_opens(settin
     await sprint_runner._advance_ready_page(settings, plan_store, plan, plan["pages"][0])
 
     updated = plan_store.get("sprint-1")
-    assert updated["pages"][0]["phase"] == "approved"  # eligible for a retry, not stuck in_progress
+    # "failed", not "approved" -- _next_ready_page must NOT auto-pick this
+    # back up next tick (that would silently re-spend a real LLM call);
+    # only an explicit human retry (the /retry endpoint) re-arms it.
+    assert updated["pages"][0]["phase"] == "failed"
+    assert updated["pages"][0]["last_error"]
+    assert sprint_runner._next_ready_page(updated) is None
+
+
+async def test_advance_ready_page_marks_failed_on_exception(settings, monkeypatch):
+    plan_store = SprintPlanStore(settings.sprint_plan_store_path)
+    plan = _plan([_page("1", "approved")], order=["1"])
+    plan_store.put(plan)
+
+    deps = AsyncMock()
+    monkeypatch.setattr(sprint_runner, "build_deps", lambda s: deps)
+
+    async def _fake_run_pipeline(page_id, deps=None, resume=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sprint_runner, "run_pipeline", _fake_run_pipeline)
+
+    await sprint_runner._advance_ready_page(settings, plan_store, plan, plan["pages"][0])
+
+    updated = plan_store.get("sprint-1")
+    assert updated["pages"][0]["phase"] == "failed"
+    assert "boom" in updated["pages"][0]["last_error"]

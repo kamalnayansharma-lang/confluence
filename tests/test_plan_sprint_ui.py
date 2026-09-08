@@ -307,6 +307,56 @@ def test_plan_sprint_approve_selected_rejects_empty_selection(client):
     assert "No%20stories%20selected" in resp.headers["location"]
 
 
+def test_retry_page_moves_a_failed_page_back_to_approved(client):
+    settings = get_settings("testuser")
+    store = SprintPlanStore(settings.sprint_plan_store_path)
+    store.put(
+        SprintPlan(
+            sprint_tag="sprint-24", gate_label="brd", space_key="SD",
+            created_at="2026-01-01T00:00:00+00:00", order=["1001"],
+            pages=[
+                SprintPlanPage(
+                    page_id="1001", page_title="Cancellation reason",
+                    page_url="https://example.atlassian.net/wiki/spaces/SD/pages/1001",
+                    page_version=1, page_body_html="<p>spec</p>", page_labels=["brd"],
+                    previous_version=None, diff_text="(first seen)\n\nspec", is_first_seen=True,
+                    body_checksum="abc", predicted_labels=[], applied_labels=[], label_gap=[],
+                    depends_on_page_ids=[], dependency_rationale="",
+                    jira_issue_key="SD-2", phase="failed", last_error="No PR opened (status=error).",
+                ),
+            ],
+        )
+    )
+
+    resp = client.post("/ui/plan-sprint/sprint-24/pages/1001/retry", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "error=" not in resp.headers["location"]
+
+    updated = store.get("sprint-24")
+    assert updated["pages"][0]["phase"] == "approved"
+    assert updated["pages"][0]["last_error"] is None
+
+
+def test_retry_page_rejects_a_page_that_is_not_failed(client):
+    _seed_plan()  # page 1002 is "confirmed", not "failed"
+
+    resp = client.post("/ui/plan-sprint/sprint-24/pages/1002/retry", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "error=" in resp.headers["location"]
+
+    settings = get_settings("testuser")
+    store = SprintPlanStore(settings.sprint_plan_store_path)
+    updated = store.get("sprint-24")
+    page = next(p for p in updated["pages"] if p["page_id"] == "1002")
+    assert page["phase"] == "confirmed"  # unchanged
+
+
+def test_retry_page_missing_plan_redirects_with_error(client):
+    resp = client.post("/ui/plan-sprint/does-not-exist/pages/1001/retry", follow_redirects=False)
+    assert resp.status_code == 303
+    assert "error=" in resp.headers["location"]
+
+
 def _planned_page(page_id: str, title: str) -> SprintPlanPage:
     return SprintPlanPage(
         page_id=page_id, page_title=title, page_url=f"https://x/{page_id}", page_version=1,
