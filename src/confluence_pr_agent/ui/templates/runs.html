@@ -36,6 +36,12 @@
   </div>
 </form>
 
+{% if hidden_count %}
+<div class="banner" style="background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); margin-bottom: 1rem;">
+  {{ hidden_count }} run{{ "s" if hidden_count != 1 else "" }} awaiting Jira approval {{ "are" if hidden_count != 1 else "is" }} hidden.
+  <a href="/ui/runs?status=awaiting_approval{% if filters.engine %}&engine={{ filters.engine }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}">Show them</a>.
+</div>
+{% endif %}
 {% if runs %}
 <p class="subtitle" style="margin-bottom: 0.5rem;">
   Showing {{ runs|length }} of {{ total_count }} run{{ "s" if total_count != 1 else "" }}.
@@ -51,6 +57,7 @@
     <tr>
       <th>Started</th>
       <th>Page</th>
+      <th>Jira story</th>
       <th>Engine</th>
       <th>Status</th>
       <th>Duration</th>
@@ -67,6 +74,13 @@
           <a href="{{ run.confluence_url }}" target="_blank" rel="noopener">{{ run.page_title or run.page_id }}</a>
         {% else %}
           {{ run.page_title or run.page_id }}
+        {% endif %}
+      </td>
+      <td>
+        {% if run.jira_issue_key %}
+          <a href="{{ run.jira_issue_url }}" target="_blank" rel="noopener" title="{{ 'Existing story reused for reference -- created earlier, e.g. via Sprint Planning' if run.jira_reused else 'Story created by this run' }}">{{ run.jira_issue_key }}{% if run.jira_reused %} (reused){% endif %}</a>
+        {% else %}
+          &mdash;
         {% endif %}
       </td>
       <td>{{ run.engine }}</td>
@@ -117,6 +131,9 @@
     {% endfor %}
   </tbody>
 </table>
+{% elif hidden_count %}
+<p>All {{ hidden_count }} run{{ "s" if hidden_count != 1 else "" }} here {{ "are" if hidden_count != 1 else "is" }} awaiting Jira approval -- none have started implementation yet.
+  <a href="/ui/runs?status=awaiting_approval">Show the {{ hidden_count }} awaiting approval</a>.</p>
 {% elif total_count %}
 <p>No runs match these filters. <a href="/ui/runs">Clear filters</a> to see all {{ total_count }}.</p>
 {% else %}

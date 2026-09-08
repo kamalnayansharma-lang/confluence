@@ -1,5 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+{# jira/sprint_planner.py's fallback for a repo target with no routing
+   label set (`rt.label or NO_ROUTING_LABEL`) -- a completely normal config
+   state (e.g. a single-repo setup with nothing to route between), not a
+   per-page problem. Given a neutral, shorter treatment everywhere it can
+   appear (label_gap, predicted_labels, file_changes[].repo_label) instead
+   of the alarming "missing label" warning treatment those get normally. #}
+{% set NO_ROUTING_LABEL = "(no routing label configured -- matches every page)" %}
+{% set NO_ROUTING_LABEL_SHORT = "No repo routing configured" %}
 <p><a href="/ui/plan-sprint">&larr; Back to Plan a Sprint</a></p>
 <h1>Sprint: {{ plan.sprint_tag }}</h1>
 <p class="subtitle">
@@ -18,14 +26,6 @@
 <fieldset>
   <legend>Confirm ({{ planned_count }} planned)</legend>
   <div class="filter-bar" style="margin-bottom: 0;">
-    <form method="post" action="/ui/plan-sprint/{{ plan.sprint_tag }}/confirm" id="confirm-form"
-          onsubmit="if (!confirm('Create/update a Jira story for EVERY still-planned page (' + {{ planned_count }} + ') and write the dependency links? This is the first step that writes anything to Jira.')) return false; document.getElementById('confirm-submit-btn').disabled = true; document.getElementById('confirm-submit-btn').textContent = 'Confirming…'; document.getElementById('confirm-status').style.display = 'inline'; return true;">
-      <button type="submit" id="confirm-submit-btn">Confirm all &amp; push to Jira</button>
-      <span class="hint" id="confirm-status" style="display: none; margin-left: 0.5rem;">&#9203; Creating/updating&hellip;</span>
-    </form>
-
-    <span class="hint">or select specific stories below:</span>
-
     <!-- Standalone form, referenced by each "planned" row's checkbox via
          the `form` attribute -- checkboxes live inside table rows (which
          already contain their own forms elsewhere), and HTML doesn't
@@ -133,10 +133,11 @@
       <td>{{ loop.index }}</td>
       <td>
         <a href="{{ p.page_url }}" target="_blank" rel="noopener">{{ p.page_title }}</a>
-        {% if p.label_gap %}
+        {% set real_gap = p.label_gap|reject("equalto", NO_ROUTING_LABEL)|list %}
+        {% if real_gap %}
           <div class="hint" style="color: var(--warning-text); margin-top: 0.25rem;">
-            &#9888;&#65039; missing label{{ "s" if p.label_gap|length != 1 else "" }}:
-            {% for lbl in p.label_gap %}<code>{{ lbl }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+            &#9888;&#65039; missing label{{ "s" if real_gap|length != 1 else "" }}:
+            {% for lbl in real_gap %}<code>{{ lbl }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
           </div>
         {% endif %}
         {% if p.file_changes or p.rationale or p.cross_repo_impact %}
@@ -147,7 +148,7 @@
               {% if p.cross_repo_impact %}<div style="margin-top: 0.3rem;"><strong>Cross-repo impact:</strong> {{ p.cross_repo_impact }}</div>{% endif %}
               {% if p.file_changes %}
                 {% for repo_label, changes in p.file_changes|groupby("repo_label") %}
-                  <div style="margin-top: 0.5rem; font-weight: 600;">{{ repo_label }}</div>
+                  <div style="margin-top: 0.5rem; font-weight: 600;">{{ "Files changed" if repo_label == NO_ROUTING_LABEL else repo_label }}</div>
                   <ul style="margin: 0.2rem 0 0.4rem 1rem; padding: 0;">
                     {% for fc in changes %}
                       <li><code>{{ fc.file_path }}</code>{% if fc.is_new_file %} <span style="color: var(--success-text);">(new file)</span>{% endif %} &mdash; {{ fc.change }}</li>
@@ -161,7 +162,9 @@
       </td>
       <td>
         {% for lbl in p.predicted_labels %}
-          {% if lbl in p.label_gap %}
+          {% if lbl == NO_ROUTING_LABEL %}
+            <code title="{{ NO_ROUTING_LABEL }}">&#8505;&#65039; {{ NO_ROUTING_LABEL_SHORT }}</code>
+          {% elif lbl in p.label_gap %}
             <code title="Predicted, but not yet applied to the page" style="color: var(--warning-text); font-weight: 600;">&#9888;&#65039; {{ lbl }}</code>
           {% else %}
             <code title="Predicted, and already applied to the page" style="opacity: 0.7;">&#10003; {{ lbl }}</code>

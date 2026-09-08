@@ -247,6 +247,91 @@ def test_runs_list_renders_a_recorded_run(client):
     assert 'href="/ui/runs/abc123"' in resp.text
 
 
+def test_runs_list_shows_jira_story_and_flags_a_reused_one(client):
+    settings = get_settings("testuser")
+    store = RunStore(settings.runs_store_path)
+    from confluence_pr_agent.models import RunRecord
+
+    store.add_run(
+        RunRecord(
+            run_id="abc123",
+            started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00",
+            duration_seconds=5.2,
+            page_id="42",
+            page_title="Some Spec",
+            confluence_url="https://example.atlassian.net/wiki/pages/42",
+            engine="claude_code",
+            target_repo="acme/widgets",
+            status="opened_pr",
+            jira_issue_key="KAN-33",
+            jira_issue_url="https://example.atlassian.net/browse/KAN-33",
+            jira_reused=True,
+        )
+    )
+
+    resp = client.get("/ui/runs")
+    assert resp.status_code == 200
+    assert "KAN-33" in resp.text
+    assert "(reused)" in resp.text
+    assert 'href="https://example.atlassian.net/browse/KAN-33"' in resp.text
+
+
+def test_runs_list_hides_awaiting_approval_runs_when_approval_required(client):
+    settings = get_settings("testuser")
+    settings.jira_approval_required = True
+    store = RunStore(settings.runs_store_path)
+    from confluence_pr_agent.models import RunRecord
+
+    store.add_run(
+        RunRecord(
+            run_id="run-awaiting", started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00", duration_seconds=5.0,
+            page_id="1", page_title="Awaiting story", confluence_url="https://example.com/1",
+            engine="claude_code", target_repo="acme/widgets", status="awaiting_approval",
+        )
+    )
+    store.add_run(
+        RunRecord(
+            run_id="run-done", started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00", duration_seconds=5.0,
+            page_id="2", page_title="Finished story", confluence_url="https://example.com/2",
+            engine="claude_code", target_repo="acme/widgets", status="opened_pr",
+        )
+    )
+
+    resp = client.get("/ui/runs")
+    assert resp.status_code == 200
+    assert "Finished story" in resp.text
+    assert "Awaiting story" not in resp.text
+    assert "1 run awaiting Jira approval is hidden" in resp.text
+    assert 'href="/ui/runs?status=awaiting_approval"' in resp.text
+
+    # Explicitly asking for that status still shows it.
+    resp2 = client.get("/ui/runs?status=awaiting_approval")
+    assert "Awaiting story" in resp2.text
+
+
+def test_runs_list_shows_awaiting_approval_runs_when_approval_not_required(client):
+    settings = get_settings("testuser")
+    settings.jira_approval_required = False
+    store = RunStore(settings.runs_store_path)
+    from confluence_pr_agent.models import RunRecord
+
+    store.add_run(
+        RunRecord(
+            run_id="run-awaiting", started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00", duration_seconds=5.0,
+            page_id="1", page_title="Awaiting story", confluence_url="https://example.com/1",
+            engine="claude_code", target_repo="acme/widgets", status="awaiting_approval",
+        )
+    )
+
+    resp = client.get("/ui/runs")
+    assert resp.status_code == 200
+    assert "Awaiting story" in resp.text
+
+
 def _seed_runs(store) -> None:
     from confluence_pr_agent.models import RunRecord
 
@@ -481,6 +566,58 @@ def test_run_detail_page_shows_full_record_including_usage_and_raw_log(client):
         assert label in resp.text
     assert resp.text.count("flow-step flow-step--done") == 6
     assert "flow-step flow-step--pending" not in resp.text
+
+
+def test_run_detail_page_shows_jira_story_chip_and_overview_row(client):
+    settings = get_settings("testuser")
+    store = RunStore(settings.runs_store_path)
+    from confluence_pr_agent.models import RunRecord
+
+    store.add_run(
+        RunRecord(
+            run_id="detail-jira", started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00", duration_seconds=5.2,
+            page_id="42", page_title="Some Spec", confluence_url="https://example.atlassian.net/wiki/pages/42",
+            engine="claude_code", target_repo="acme/widgets", status="opened_pr",
+            jira_issue_key="KAN-33", jira_issue_url="https://example.atlassian.net/browse/KAN-33",
+            jira_reused=True,
+        )
+    )
+
+    resp = client.get("/ui/runs/detail-jira")
+    assert resp.status_code == 200
+    assert resp.text.count("KAN-33") >= 2  # header chip + Overview row
+    assert "existing story reused for reference" in resp.text
+    assert 'href="https://example.atlassian.net/browse/KAN-33"' in resp.text
+
+
+def test_run_detail_page_highlights_next_steps_as_a_warning_callout(client):
+    settings = get_settings("testuser")
+    store = RunStore(settings.runs_store_path)
+    from confluence_pr_agent.models import RunRecord
+
+    store.add_run(
+        RunRecord(
+            run_id="detail-scope-gap", started_at="2026-01-01T00:00:00+00:00",
+            finished_at="2026-01-01T00:00:05+00:00", duration_seconds=5.2,
+            page_id="42", page_title="Some Spec", confluence_url="https://example.atlassian.net/wiki/pages/42",
+            engine="claude_code", target_repo="acme/widgets", status="opened_pr",
+            summary=(
+                "I implemented the backend change.\n\n"
+                "### Next steps\n"
+                "Add the `repo-ui` label and re-run the pipeline."
+            ),
+            flagged_scope_gap=True,
+        )
+    )
+
+    resp = client.get("/ui/runs/detail-scope-gap")
+    assert resp.status_code == 200
+    assert "I implemented the backend change." in resp.text
+    assert "Add the `repo-ui` label and re-run the pipeline." in resp.text
+    assert "Next steps &mdash; more action needed" in resp.text
+    # The "### Next steps" heading itself must not leak into the visible body text.
+    assert "### Next steps" not in resp.text
 
 
 def test_run_detail_page_shows_progress_heading_and_active_stage_when_running(client):

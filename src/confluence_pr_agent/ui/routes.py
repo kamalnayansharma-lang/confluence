@@ -42,7 +42,7 @@ from confluence_pr_agent.ui.config_fields import (
     REPO_CREDENTIAL_BY_PROVIDER,
 )
 from confluence_pr_agent.ui.diff_view import render_diff_html
-from confluence_pr_agent.ui.pipeline_flow import build_flow_steps
+from confluence_pr_agent.ui.pipeline_flow import build_flow_steps, split_next_steps
 from confluence_pr_agent.ui.usage_summary import summarize_usage
 
 router = APIRouter()
@@ -484,12 +484,26 @@ async def runs_list(
 
     runs = _filter_runs(all_runs, engine=engine, status=status, date_from=date_from, date_to=date_to)
 
+    # "Require approval before implementation" (Jira tab, Config) -- when on,
+    # a poll/webhook creates an `awaiting_approval` run as a placeholder the
+    # moment a Jira story is filed, before any real implementation work has
+    # happened. Hidden from the default view (still reachable via the Status
+    # filter) so this page reads as "what actually got implemented", not a
+    # queue of stories still waiting on a human -- unless the Status filter
+    # was explicitly set to awaiting_approval, in which case that's exactly
+    # what was asked for.
+    hide_awaiting_approval = settings.jira_approval_required and status != "awaiting_approval"
+    visible_runs = [r for r in runs if r.get("status") != "awaiting_approval"] if hide_awaiting_approval else runs
+    hidden_count = len(runs) - len(visible_runs)
+
     return templates.TemplateResponse(
         request,
         "runs.html",
         {
-            "runs": runs,
+            "runs": visible_runs,
             "total_count": len(all_runs),
+            "filtered_count": len(runs),
+            "hidden_count": hidden_count,
             "filters": {"engine": engine, "status": status, "date_from": date_from, "date_to": date_to},
             "engines_available": ALL_ENGINES,
             "statuses_available": ALL_STATUSES,
@@ -538,6 +552,7 @@ async def run_detail(request: Request, run_id: str, username: str = Depends(curr
             request, "run_detail.html", {"run": None, "run_id": run_id}, status_code=404
         )
     spec_diff = run.get("spec_diff")
+    summary_body, summary_next_steps = split_next_steps(run["summary"]) if run.get("summary") else (None, None)
     return templates.TemplateResponse(
         request,
         "run_detail.html",
@@ -547,6 +562,8 @@ async def run_detail(request: Request, run_id: str, username: str = Depends(curr
             "usage_summary": summarize_usage(run.get("usage")),
             "flow_steps": build_flow_steps(run),
             "spec_diff_html": render_diff_html(spec_diff) if spec_diff else None,
+            "summary_body": summary_body,
+            "summary_next_steps": summary_next_steps,
         },
     )
 
