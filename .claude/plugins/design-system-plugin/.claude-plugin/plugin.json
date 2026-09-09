@@ -1,0 +1,9 @@
+{
+    "license": "MIT",
+    "author": {
+        "name": "Neurealm UX/Dev Team"
+    },
+    "description": "Neurealm Design System plugin — provides core color primitives, light mode applied schemes, and typography specifications for consistent project implementation.",
+    "name": "neurealm-design-system",
+    "version": "0.1.0"
+}

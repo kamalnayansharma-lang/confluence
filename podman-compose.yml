@@ -51,13 +51,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8081:8081"
-      # 8081, not 8080: a sibling project on this same machine
-      # (vuln-remediation-agent's fixer-server) already binds host 8080, so
-      # local dev here runs on 8081 instead -- see DOMAIN in .env. A
-      # *published-but-unused* 8080 mapping would still fail the whole
-      # container start on the OS-level bind conflict, so this isn't
-      # additive with the old port, it replaces it.
+      - "8080:8080"
+      # Keep the host and container ports aligned for local access through the
+      # Podman machine address, for example http://172.22.17.15:8080.
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

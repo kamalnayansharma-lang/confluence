@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Jira bug watch</h1>
+<p class="subtitle">Analyze bugs first, review the action plan, then ask the configured agent to implement and open a PR.</p>
+{% if request.query_params.get('polled') %}<div class="banner banner-ok">Jira poll completed.</div>{% endif %}
+{% if request.query_params.get('analyzed') %}<div class="banner banner-ok">Bug analyzed. Review the repositories and action plan before starting the agent.</div>{% endif %}
+{% if request.query_params.get('started') %}<div class="banner banner-ok">Agent started. <a href="/ui/runs/{{ request.query_params.get('run_id') }}">View live progress in Pipeline Runs</a>.</div>{% endif %}
+{% if request.query_params.get('fixed') %}<div class="banner banner-ok">Fix workflow completed. Check the ticket row for its pull request.</div>{% endif %}
+{% if request.query_params.get('error') %}<div class="banner banner-error">{{ request.query_params.get('error') }}</div>{% endif %}
+<form method="post" action="/ui/jira-bugs/poll"><button type="submit">Poll Jira now</button></form>
+<p class="hint">Last poll: {{ scan.scanned_at or "Never" }} | JQL: {{ settings.jira_bug_jql or "all bugs in the configured project" }}</p>
+{% if scan.issues %}
+<table><thead><tr><th>Ticket</th><th>Summary</th><th>Status</th><th>Priority</th><th>Workflow</th><th></th></tr></thead><tbody>
+{% for issue in scan.issues %}<tr>
+<td><a href="{{ issue.url }}" target="_blank" rel="noopener">{{ issue.key }}</a></td><td>{{ issue.summary }}</td><td>{{ issue.status }}</td><td>{{ issue.priority }}</td>
+<td><span class="badge badge-{{ issue.triage }}">{{ issue.triage | replace('_', ' ') }}</span>{% if issue.analysis %}<div class="hint" style="white-space: pre-wrap;">{{ issue.analysis }}</div>{% endif %}{% if issue.analysis_repos %}<div class="hint"><strong>Repos:</strong> {{ issue.analysis_repos | join(', ') }}</div>{% endif %}{% if issue.analysis_plan %}<ol class="hint" style="margin-top: 0.35rem; padding-left: 1.2rem;">{% for step in issue.analysis_plan %}<li>{{ step }}</li>{% endfor %}</ol>{% endif %}</td>
+<td>{% if issue.triage == 'approved' %}<form method="post" action="/ui/jira-bugs/{{ issue.key }}/fix"><button type="submit">Fix with agent</button></form>{% elif issue.triage == 'pending' or issue.triage == 'fix_failed' or issue.triage == 'tests_failed' %}<form method="post" action="/ui/jira-bugs/{{ issue.key }}/analyze"><button type="submit">Analyze bug</button></form>{% elif issue.triage == 'analyzed' %}<span class="hint">Awaiting developer approval in Jira&hellip;</span>{% elif issue.triage == 'running' %}<span class="hint">Agent running&hellip;</span>{% endif %}{% if issue.pr_url %}<a href="{{ issue.pr_url }}" target="_blank" rel="noopener">Open PR</a>{% endif %}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}<p>No Jira tickets have been polled yet.</p>{% endif %}
+{% endblock %}

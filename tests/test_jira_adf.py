@@ -20,6 +20,20 @@ def test_description_without_acceptance_criteria_or_plan_has_no_extra_headings()
     assert _headings(doc) == []
 
 
+def test_markdown_headings_and_lists_become_native_adf_nodes():
+    doc = build_story_description_adf(
+        "## Problem and context\n\nThe booking flow is unclear.\n\n"
+        "### Implementation Plan\n\n- Update the service.\n- Add a regression test.\n\n"
+        "1. Run tests.\n2. Open a PR.",
+        [],
+    )
+
+    assert _headings(doc) == [(2, "Problem and context"), (3, "Implementation Plan")]
+    assert [block["type"] for block in doc["content"]] == [
+        "heading", "paragraph", "heading", "bulletList", "orderedList"
+    ]
+
+
 def test_acceptance_criteria_adds_its_own_heading_and_bullet_list():
     doc = build_story_description_adf("Desc.", ["Criterion one", "Criterion two"])
     assert "Acceptance Criteria" in _heading_texts(doc)
