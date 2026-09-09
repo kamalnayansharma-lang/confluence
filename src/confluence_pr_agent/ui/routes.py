@@ -28,7 +28,16 @@ from openai import AsyncOpenAI
 from confluence_pr_agent.confluence.client import ConfluenceClient
 from confluence_pr_agent.config import clear_settings_cache, get_process_config, get_settings
 from confluence_pr_agent.jira.client import JiraClient
+from confluence_pr_agent.jira.bug_triage import (
+    analyze_issue,
+    create_fix_run,
+    clear_analysis_display,
+    fix_issue,
+    load_scan,
+    poll_jira,
+)
 from confluence_pr_agent.pipeline.poller import poll_once, retrigger_page
+from confluence_pr_agent.pipeline.jira_bug_poller import mark_approved_issues
 from confluence_pr_agent.pipeline.stages import STAGE_LABELS
 from confluence_pr_agent.repo.github_client import GitHubClient
 from confluence_pr_agent.repo.test_command_detection import detect_tech_stack, detect_test_command
@@ -245,6 +254,63 @@ def _config_context(username: str, saved: bool = False, error: str | None = None
 @router.get("/ui/config")
 async def config_form(request: Request, username: str = Depends(current_username)):
     return templates.TemplateResponse(request, "config.html", _config_context(username))
+
+
+@router.get("/ui/jira-bugs")
+async def jira_bugs(request: Request, username: str = Depends(current_username)):
+    settings = get_settings(username)
+    analysis_issue_key = request.cookies.get("jira_analysis_once")
+    if not analysis_issue_key:
+        clear_analysis_display(settings)
+    scan = load_scan(settings)
+    response = templates.TemplateResponse(request, "jira_bugs.html", {"scan": scan, "settings": settings})
+    if analysis_issue_key:
+        response.delete_cookie("jira_analysis_once")
+    return response
+
+
+@router.post("/ui/jira-bugs/poll")
+async def jira_bugs_poll(request: Request, username: str = Depends(current_username)):
+    try:
+        settings = get_settings(username)
+        scan = await poll_jira(settings)
+        mark_approved_issues(settings, scan)
+        return RedirectResponse(url="/ui/jira-bugs?polled=1", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(url=f"/ui/jira-bugs?error={str(exc)[:180]}", status_code=303)
+
+
+@router.post("/ui/jira-bugs/{issue_key}/analyze")
+async def jira_bug_analyze(issue_key: str, username: str = Depends(current_username)):
+    try:
+        await analyze_issue(get_settings(username), issue_key)
+        response = RedirectResponse(url="/ui/jira-bugs?analyzed=1", status_code=303)
+        response.set_cookie("jira_analysis_once", issue_key, httponly=True, samesite="lax")
+        return response
+    except Exception as exc:
+        return RedirectResponse(url=f"/ui/jira-bugs?error={str(exc)[:180]}", status_code=303)
+
+
+@router.post("/ui/jira-bugs/{issue_key}/fix")
+async def jira_bug_fix(issue_key: str, background_tasks: BackgroundTasks, username: str = Depends(current_username)):
+    try:
+        settings = get_settings(username)
+        scan = load_scan(settings)
+        issue = next((item for item in scan["issues"] if item["key"] == issue_key), None)
+        if not issue:
+            raise ValueError("Issue is not in the latest Jira scan")
+        if issue.get("triage") not in {"analyzed", "approved"}:
+            raise ValueError("Analyze the bug and wait for developer approval before starting the agent")
+        approved_name = settings.jira_approved_status_name.strip().lower()
+        if not settings.jira_approval_required or not approved_name:
+            raise ValueError("Configure Jira approval and an approved status before starting the agent")
+        if issue.get("status", "").strip().lower() != approved_name:
+            raise ValueError(f"The developer must move this bug to {settings.jira_approved_status_name!r} first")
+        run_id = create_fix_run(settings, issue)
+        background_tasks.add_task(fix_issue, settings, issue_key, run_id)
+        return RedirectResponse(url=f"/ui/jira-bugs?started=1&run_id={run_id}", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(url=f"/ui/jira-bugs?error={str(exc)[:180]}", status_code=303)
 
 
 @router.post("/ui/config")

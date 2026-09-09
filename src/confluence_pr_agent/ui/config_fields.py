@@ -247,6 +247,10 @@ CONFIG_FIELDS: list[ConfigField] = [
         options=["Story", "Task", "Bug", "Epic"],
         help_text="Must exist in the target project's issue type scheme -- team-managed Kanban projects, for example, often lack \"Story\".",
     ),
+    ConfigField("JIRA_BUG_POLL_ENABLED", "Poll Jira for bugs", "Jira", input_type="select", options=["true", "false"]),
+    ConfigField("JIRA_BUG_POLL_INTERVAL_SECONDS", "Bug poll interval (seconds)", "Jira", input_type="number", placeholder="300"),
+    ConfigField("JIRA_BUG_JQL", "Bug polling JQL", "Jira", placeholder="project = KAN AND statusCategory != Done"),
+    ConfigField("JIRA_POLL_LIMIT", "Tickets per poll", "Jira", input_type="number", placeholder="25"),
     ConfigField(
         "JIRA_SUGGEST_STORY_POINTS", "Suggest story points", "Jira", input_type="select",
         options=["true", "false"],

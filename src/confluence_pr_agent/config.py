@@ -217,6 +217,10 @@ class Settings(BaseSettings):
     jira_api_token: str = Field(default="")
     jira_project_key: str = Field(default="")
     jira_issue_type: str = Field(default="Story")
+    jira_bug_poll_enabled: bool = Field(default=False)
+    jira_bug_poll_interval_seconds: int = Field(default=300)
+    jira_bug_jql: str = Field(default="")
+    jira_poll_limit: int = Field(default=25)
     # Comment-only, never written to the real Story Points field -- that
     # field is a per-instance custom field (customfield_NNNNN) with no
     # stable name, and an LLM's number has no basis in a team's own velocity
@@ -344,7 +348,17 @@ class Settings(BaseSettings):
 def get_settings(username: str) -> Settings:
     process = get_process_config()
     user_dir = process.user_dir_path(username)
-    return Settings(_env_file=str(user_dir / ".env"), data_dir=str(user_dir))
+    user_env = user_dir / ".env"
+
+    # Preserve the existing single-user setup: the configured default user
+    # starts from the mounted top-level .env, while additional identities
+    # still receive isolated, hardcoded defaults until they configure them.
+    if username == process.resolved_default_user and not user_env.exists():
+        root_env = Path(".env")
+        if root_env.exists():
+            user_env.write_bytes(root_env.read_bytes())
+
+    return Settings(_env_file=str(user_env), data_dir=str(user_dir))
 
 
 def clear_settings_cache() -> None:

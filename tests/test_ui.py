@@ -156,6 +156,30 @@ def test_non_numeric_value_for_a_number_field_is_rejected(client, _isolated_env_
     assert "CHANGE_AGENT_MAX_ATTEMPTS=3" in content
 
 
+def test_jira_bug_fix_requires_analysis_and_starts_background_run(client, monkeypatch):
+    settings = get_settings("testuser")
+    settings.jira_approval_required = True
+    settings.jira_approved_status_name = "Approved"
+    settings.data_dir_path.mkdir(parents=True, exist_ok=True)
+    (settings.data_dir_path / "jira_bug_scans.json").write_text(json.dumps({"scanned_at": "now", "issues": [{
+        "key": "KAN-2", "summary": "Broken checkout", "url": "https://jira/KAN-2",
+        "status": "Approved", "priority": "Medium", "triage": "analyzed",
+    }]}))
+    calls = []
+
+    async def fake_fix_issue(settings, issue_key, run_id):
+        calls.append((issue_key, run_id))
+
+    monkeypatch.setattr(ui_routes, "fix_issue", fake_fix_issue)
+
+    resp = client.post("/ui/jira-bugs/KAN-2/fix", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert resp.headers["location"].startswith("/ui/jira-bugs?started=1&run_id=")
+    assert calls[0][0] == "KAN-2"
+    assert calls[0][1]
+
+
 def test_runs_list_empty_state(client):
     resp = client.get("/ui/runs")
     assert resp.status_code == 200

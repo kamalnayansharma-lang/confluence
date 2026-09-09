@@ -16,8 +16,9 @@ class GitCommandError(RuntimeError):
 
 
 async def _run(*args: str, cwd: Path | None = None) -> str:
+    git_args = ["git", "-c", "safe.directory=*", *args[1:]] if args and args[0] == "git" else list(args)
     process = await asyncio.create_subprocess_exec(
-        *args,
+        *git_args,
         cwd=str(cwd) if cwd else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
@@ -25,7 +26,7 @@ async def _run(*args: str, cwd: Path | None = None) -> str:
     stdout, _ = await process.communicate()
     output = stdout.decode("utf-8", errors="replace")
     if process.returncode != 0:
-        raise GitCommandError(list(args), process.returncode, output)
+        raise GitCommandError(git_args, process.returncode, output)
     return output
 
 

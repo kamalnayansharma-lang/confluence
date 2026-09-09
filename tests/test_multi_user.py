@@ -85,6 +85,25 @@ def test_new_username_is_auto_provisioned_with_a_blank_slate(client):
     assert process.user_dir_path("brand-new-person").exists()
 
 
+def test_default_user_bootstraps_from_top_level_env(client, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "CONFLUENCE_BASE_URL=https://configured.example/wiki\n"
+        "CONFLUENCE_USER_EMAIL=configured@example.com\n"
+    )
+    monkeypatch.setenv("DEFAULT_USER", "demo-user")
+    get_process_config.cache_clear()
+    get_settings.cache_clear()
+
+    response = client.get("/ui/config", headers=_as("demo-user"))
+
+    assert response.status_code == 200
+    assert "https://configured.example/wiki" in response.text
+    assert "configured@example.com" in response.text
+    assert get_settings("demo-user").confluence_base_url == "https://configured.example/wiki"
+    assert get_settings("other-user").confluence_base_url == "https://example.atlassian.net/wiki"
+
+
 def test_current_username_rejects_a_request_without_the_shared_secret_when_configured(client, monkeypatch):
     monkeypatch.setenv("INTERNAL_SHARED_SECRET", "the-real-secret")
     get_process_config.cache_clear()

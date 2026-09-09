@@ -49,6 +49,37 @@ class JiraClient:
         resp.raise_for_status()
         return resp.json().get("displayName", "")
 
+    async def search_issues(self, jql: str, limit: int = 25) -> list[dict]:
+        """Return a small, UI-safe snapshot of issues matching JQL.
+
+        Jira Cloud retired the legacy GET /search resource with HTTP 410.
+        The current endpoint is POST /search/jql, with the query in JSON.
+        """
+        resp = await self._client.post(
+            f"{self._base_url}/rest/api/{API_VERSION}/search/jql",
+            auth=self._auth,
+            json={
+                "jql": jql,
+                "maxResults": limit,
+                "fields": ["summary", "description", "status", "issuetype", "priority", "labels"],
+            },
+        )
+        resp.raise_for_status()
+        issues = []
+        for issue in resp.json().get("issues", []):
+            fields = issue.get("fields", {})
+            issues.append({
+                "key": issue.get("key", ""),
+                "summary": fields.get("summary", ""),
+                "description": fields.get("description", ""),
+                "status": (fields.get("status") or {}).get("name", ""),
+                "issue_type": (fields.get("issuetype") or {}).get("name", ""),
+                "priority": (fields.get("priority") or {}).get("name", ""),
+                "labels": fields.get("labels") or [],
+                "url": self._issue_url(issue.get("key", "")),
+            })
+        return issues
+
     async def create_issue(
         self,
         project_key: str,
