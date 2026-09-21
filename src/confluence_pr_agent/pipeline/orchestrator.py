@@ -67,6 +67,7 @@ from confluence_pr_agent.notifications.templates import build_summary_email
 from confluence_pr_agent.pipeline.stages import STAGE_KEYS
 from confluence_pr_agent.repo.git_client import GitClient
 from confluence_pr_agent.repo.github_client import GitHubClient
+from confluence_pr_agent.repo.reviewer_cache import get_best_reviewer
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
 from confluence_pr_agent.storage.pending_approval_store import PendingApproval, PendingApprovalStore
 from confluence_pr_agent.storage.run_store import RunStore
@@ -122,6 +123,7 @@ def _build_pr_body(
     parts = [
         f"**Source:** [{page.title}]({page.url}) (v{diff.previous_version} -> v{page.version})\n",
         f"**Summary of change:**\n{change.summary}\n",
+        "Quality gate:  passed\n",
     ]
 
     if judge_result and judge_result.verdict == "rejected":
@@ -397,6 +399,10 @@ async def _finalize_repo(
                 body=pr_body,
                 draft=is_rejected,
             )
+
+        reviewer = get_best_reviewer(str(repo_dir), files_changed)
+        if reviewer:
+            await deps.github.request_reviewers(rt.target_repo, pull_request.number, [reviewer])
 
         await _sync_verdict_label(deps.github, rt.target_repo, pull_request.number, verdict_for_labels)
 

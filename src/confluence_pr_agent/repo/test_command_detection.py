@@ -27,10 +27,31 @@ _MARKERS: list[tuple[str, str]] = [
     ("Gemfile", "bundle exec rspec"),
 ]
 
+_LINT_MARKERS: list[tuple[str, str]] = [
+    ("pom.xml", "mvn verify"),
+    ("build.gradle", "./gradlew check"),
+    ("build.gradle.kts", "./gradlew check"),
+    ("go.mod", "golangci-lint run"),
+    ("Cargo.toml", "cargo clippy -- -D warnings"),
+    ("package.json", "npm run lint"),
+    ("pyproject.toml", "ruff check && bandit -q -r ."),
+    ("requirements.txt", "ruff check && bandit -q -r ."),
+    ("setup.py", "ruff check && bandit -q -r ."),
+    ("Gemfile", "bundle exec rubocop"),
+]
+
 
 def detect_test_command(root_files: list[str]) -> str | None:
     names = set(root_files)
     for marker, command in _MARKERS:
+        if marker in names:
+            return command
+    return None
+
+
+def detect_lint_command(root_files: list[str]) -> str | None:
+    names = set(root_files)
+    for marker, command in _LINT_MARKERS:
         if marker in names:
             return command
     return None

@@ -142,6 +142,16 @@ CONFIG_FIELDS: list[ConfigField] = [
             "overrides the global Coding standards fallback below for that repo only."
         ),
     ),
+    ConfigField(
+        "TARGET_REPO_TEST_COMMAND", "Test command (single-repo fallback)", "Repository",
+        placeholder="pytest",
+        help_text="Used when TARGET_REPOS_JSON is blank. Runs before the quality gate.",
+    ),
+    ConfigField(
+        "TARGET_REPO_LINT_COMMAND", "Lint / security command (single-repo fallback)", "Repository",
+        placeholder="ruff check && bandit -q -r .",
+        help_text="Optional. Used after tests pass when TARGET_REPOS_JSON is blank.",
+    ),
     ConfigField("GITHUB_TOKEN", "GitHub PAT", "Repository", secret=True),
     ConfigField(
         "CODING_STANDARDS", "Coding standards (global fallback)", "Repository",

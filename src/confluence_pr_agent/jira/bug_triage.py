@@ -102,12 +102,13 @@ async def analyze_issue(settings: Settings, issue_key: str) -> dict:
                 tree = await github.get_repo_file_tree(target.target_repo, target.base_branch)
             except Exception:
                 tree = []
-            candidates = [
+            matching_paths = [path for path in tree if any(keyword in path.lower() for keyword in keywords)]
+            test_paths = [
                 path for path in tree
-                if any(keyword in path.lower() for keyword in keywords)
-                or "/test" in path.lower()
-                or path.lower().startswith("test")
-            ][:12]
+                if "/test" in path.lower() or path.lower().startswith("test")
+            ]
+            implementation_paths = [path for path in matching_paths if path not in test_paths]
+            candidates = (implementation_paths + test_paths)[:12]
             files_by_repo[target.target_repo] = candidates or tree[:12]
     finally:
         await github.aclose()

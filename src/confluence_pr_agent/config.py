@@ -145,6 +145,7 @@ class Settings(BaseSettings):
     target_repo: str = Field(default="your-org/your-repo")
     target_repo_base_branch: str = Field(default="main")
     target_repo_test_command: str = Field(default="pytest")
+    target_repo_lint_command: str = Field(default="")
     # Real multi-repo config -- a JSON array of {target_repo, base_branch,
     # test_command, label} objects, e.g. for a change that needs coordinated
     # edits across several coupled repos (see pipeline/orchestrator.py's
@@ -311,6 +312,7 @@ class Settings(BaseSettings):
                 target_repo=self.target_repo,
                 base_branch=self.target_repo_base_branch,
                 test_command=self.target_repo_test_command,
+                lint_command=self.target_repo_lint_command,
                 label="",
             )
         ]

@@ -200,6 +200,7 @@ async def test_successful_change_opens_pr_and_emails_team(settings, monkeypatch)
         return RepoTestResult(passed=True, output="2 passed", command=command)
 
     monkeypatch.setattr(orchestrator, "run_tests", _fake_run_tests)
+    monkeypatch.setattr(orchestrator, "get_best_reviewer", lambda repo_dir, changed_files: "alice")
 
     result = await run_pipeline("123456", deps=deps)
 
@@ -210,6 +211,7 @@ async def test_successful_change_opens_pr_and_emails_team(settings, monkeypatch)
     deps.git.clone.assert_awaited_once()
     deps.git.push.assert_awaited_once()
     deps.github.open_pull_request.assert_awaited_once()
+    deps.github.request_reviewers.assert_awaited_once_with("acme/widgets", 7, ["alice"])
     deps.email_client.send_email.assert_awaited_once()
 
     stored = deps.store.get("123456")

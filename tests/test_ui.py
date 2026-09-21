@@ -180,6 +180,29 @@ def test_jira_bug_fix_requires_analysis_and_starts_background_run(client, monkey
     assert calls[0][1]
 
 
+def test_jira_bug_analysis_remains_visible_after_fix_workflow_starts(client):
+    settings = get_settings("testuser")
+    settings.data_dir_path.mkdir(parents=True, exist_ok=True)
+    (settings.data_dir_path / "jira_bug_scans.json").write_text(json.dumps({"scanned_at": "now", "issues": [{
+        "key": "KAN-2",
+        "summary": "Broken checkout",
+        "status": "Approved",
+        "priority": "Medium",
+        "triage": "pr_opened",
+        "analysis": "Fix the checkout bug by validating the request payload.",
+        "analysis_repos": ["acme/widgets"],
+        "analysis_plan": ["Inspect request validation", "Patch the handler"],
+        "pr_url": "https://github.example/acme/widgets/pull/41",
+    }]}))
+
+    resp = client.get("/ui/jira-bugs")
+
+    assert resp.status_code == 200
+    assert "Fix the checkout bug by validating the request payload." in resp.text
+    assert "acme/widgets" in resp.text
+    assert "Open PR" in resp.text
+
+
 def test_runs_list_empty_state(client):
     resp = client.get("/ui/runs")
     assert resp.status_code == 200

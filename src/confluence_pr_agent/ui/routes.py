@@ -40,7 +40,11 @@ from confluence_pr_agent.pipeline.poller import poll_once, retrigger_page
 from confluence_pr_agent.pipeline.jira_bug_poller import mark_approved_issues
 from confluence_pr_agent.pipeline.stages import STAGE_LABELS
 from confluence_pr_agent.repo.github_client import GitHubClient
-from confluence_pr_agent.repo.test_command_detection import detect_tech_stack, detect_test_command
+from confluence_pr_agent.repo.test_command_detection import (
+    detect_lint_command,
+    detect_tech_stack,
+    detect_test_command,
+)
 from confluence_pr_agent.storage.run_store import RunStore
 from confluence_pr_agent.ui.auth import current_username
 from confluence_pr_agent.ui.config_fields import (
@@ -260,8 +264,6 @@ async def config_form(request: Request, username: str = Depends(current_username
 async def jira_bugs(request: Request, username: str = Depends(current_username)):
     settings = get_settings(username)
     analysis_issue_key = request.cookies.get("jira_analysis_once")
-    if not analysis_issue_key:
-        clear_analysis_display(settings)
     scan = load_scan(settings)
     response = templates.TemplateResponse(request, "jira_bugs.html", {"scan": scan, "settings": settings})
     if analysis_issue_key:
@@ -359,9 +361,10 @@ async def save_config(request: Request, username: str = Depends(current_username
 async def detect_test_command_route(repo: str, username: str = Depends(current_username)):
     """Called by the repeating repo-config editor's JS when a row's repo
     field is filled in -- looks at that repo's actual root files (via this
-    user's own GitHub token) and suggests a test command instead of leaving
-    it blank or wrong. Best-effort: any failure (bad repo name, no access,
-    network) degrades to {"test_command": None, "tech_stack": None}, same
+    user's own GitHub token) and suggests test and lint/security commands
+    instead of leaving them blank or wrong. Best-effort: any failure (bad
+    repo name, no access, network) degrades to {"test_command": None,
+    "lint_command": None, "tech_stack": None}, same
     fail-open idiom as everything else here -- this is a convenience, not
     something that should be able to break the config page.
 
@@ -372,14 +375,18 @@ async def detect_test_command_route(repo: str, username: str = Depends(current_u
     settings = get_settings(username)
     repo = repo.strip()
     if not repo or not settings.github_token:
-        return {"test_command": None, "tech_stack": None}
+        return {"test_command": None, "lint_command": None, "tech_stack": None}
 
     github = GitHubClient(settings.github_token)
     try:
         files = await github.list_root_files(repo)
-        return {"test_command": detect_test_command(files), "tech_stack": detect_tech_stack(files)}
+        return {
+            "test_command": detect_test_command(files),
+            "lint_command": detect_lint_command(files),
+            "tech_stack": detect_tech_stack(files),
+        }
     except Exception:
-        return {"test_command": None, "tech_stack": None}
+        return {"test_command": None, "lint_command": None, "tech_stack": None}
     finally:
         await github.aclose()
 
