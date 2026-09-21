@@ -84,7 +84,13 @@ class GitHubClient:
         resp = await self._client.get(f"/repos/{owner_repo}/pulls/{pr_number}")
         resp.raise_for_status()
         data = resp.json()
-        return PullRequestStatus(number=data["number"], state=data["state"], merged=bool(data.get("merged", False)))
+        labels = [item["name"] for item in data.get("labels", []) if isinstance(item, dict) and "name" in item]
+        return PullRequestStatus(
+            number=data["number"],
+            state=data["state"],
+            merged=bool(data.get("merged", False)),
+            labels=labels,
+        )
 
     async def update_pull_request(self, owner_repo: str, pr_number: int, title: str, body: str) -> PullRequestResult:
         resp = await self._client.patch(f"/repos/{owner_repo}/pulls/{pr_number}", json={"title": title, "body": body})
@@ -152,3 +158,29 @@ class GitHubClient:
         data = resp.json()
         paths = sorted(item["path"] for item in data.get("tree", []) if item.get("type") == "blob")
         return paths[:limit]
+
+    async def list_review_comments(
+        self, owner_repo: str, pr_number: int, since: str | None = None,
+    ) -> list[dict]:
+        """Fetches PR review comments. Returns raw GitHub API comment dicts.
+        ``since`` is an ISO-8601 timestamp that filters to comments created or
+        updated at or after that time.
+        """
+        params: dict[str, str] = {"per_page": "100"}
+        if since:
+            params["since"] = since
+        resp = await self._client.get(
+            f"/repos/{owner_repo}/pulls/{pr_number}/comments", params=params,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    async def add_pull_request_comment(
+        self, owner_repo: str, pr_number: int, body: str,
+    ) -> dict:
+        """Posts a comment on the PR's main conversation thread."""
+        resp = await self._client.post(
+            f"/repos/{owner_repo}/issues/{pr_number}/comments",
+            json={"body": body},
+        )
+        resp.raise_for_status()
+        return resp.json()

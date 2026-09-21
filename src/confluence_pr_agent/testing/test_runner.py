@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -55,7 +56,7 @@ async def run_tests(repo_dir: Path, command: str) -> RepoTestResult:
     # exception that would otherwise abort the whole pipeline run with a
     # raw traceback as the only explanation.
     try:
-        args = shlex.split(command)
+        args = shlex.split(command, posix=os.name != "nt")
         returncode, output = await _run(*args, cwd=repo_dir)
     except (ValueError, OSError) as exc:
         log_parts.append(

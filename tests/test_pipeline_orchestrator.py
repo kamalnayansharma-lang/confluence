@@ -211,6 +211,8 @@ async def test_successful_change_opens_pr_and_emails_team(settings, monkeypatch)
     deps.git.clone.assert_awaited_once()
     deps.git.push.assert_awaited_once()
     deps.github.open_pull_request.assert_awaited_once()
+    deps.github.ensure_label.assert_any_await("acme/widgets", "agent:opened", "1d76db", "Opened by confluence-pr-agent -- a human review or follow-up prompt may re-open this PR.")
+    deps.github.add_labels.assert_any_await("acme/widgets", 7, ["agent:opened"])
     deps.github.request_reviewers.assert_awaited_once_with("acme/widgets", 7, ["alice"])
     deps.email_client.send_email.assert_awaited_once()
 
@@ -1064,9 +1066,14 @@ async def test_rejection_syncs_needs_work_label_and_clears_warning_label(setting
     result = await run_pipeline("123456", deps=deps)
 
     assert result.status == "judge_rejected"
-    deps.github.ensure_label.assert_awaited_once()
-    assert deps.github.ensure_label.await_args.args[1] == orchestrator.LABEL_NEEDS_WORK
-    deps.github.add_labels.assert_awaited_once_with("acme/widgets", 7, [orchestrator.LABEL_NEEDS_WORK])
+    deps.github.ensure_label.assert_any_await(
+        "acme/widgets", orchestrator.LABEL_NEEDS_WORK, orchestrator._LABEL_COLOR[orchestrator.LABEL_NEEDS_WORK], orchestrator._LABEL_DESCRIPTION[orchestrator.LABEL_NEEDS_WORK]
+    )
+    deps.github.ensure_label.assert_any_await(
+        "acme/widgets", orchestrator.LABEL_AGENT_OPENED, orchestrator._LABEL_COLOR[orchestrator.LABEL_AGENT_OPENED], orchestrator._LABEL_DESCRIPTION[orchestrator.LABEL_AGENT_OPENED]
+    )
+    deps.github.add_labels.assert_any_await("acme/widgets", 7, [orchestrator.LABEL_NEEDS_WORK])
+    deps.github.add_labels.assert_any_await("acme/widgets", 7, [orchestrator.LABEL_AGENT_OPENED])
     deps.github.remove_label.assert_any_await("acme/widgets", 7, orchestrator.LABEL_WARNING)
 
 
@@ -1083,10 +1090,13 @@ async def test_clean_approval_removes_both_verdict_labels(settings, monkeypatch)
     result = await run_pipeline("123456", deps=deps)
 
     assert result.status == "opened_pr"
-    deps.github.ensure_label.assert_not_called()
-    deps.github.add_labels.assert_not_called()
+    deps.github.ensure_label.assert_awaited_once_with(
+        "acme/widgets", orchestrator.LABEL_AGENT_OPENED, orchestrator._LABEL_COLOR[orchestrator.LABEL_AGENT_OPENED], orchestrator._LABEL_DESCRIPTION[orchestrator.LABEL_AGENT_OPENED]
+    )
+    deps.github.add_labels.assert_awaited_once_with("acme/widgets", 7, [orchestrator.LABEL_AGENT_OPENED])
     deps.github.remove_label.assert_any_await("acme/widgets", 7, orchestrator.LABEL_NEEDS_WORK)
     deps.github.remove_label.assert_any_await("acme/widgets", 7, orchestrator.LABEL_WARNING)
+
 
 
 async def test_reuses_still_open_pr_branch_instead_of_opening_a_new_one(settings, monkeypatch):

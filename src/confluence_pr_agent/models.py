@@ -192,6 +192,7 @@ class PullRequestStatus:
     number: int
     state: str  # "open" | "closed"
     merged: bool
+    labels: list[str] = field(default_factory=list)
 
     @property
     def is_open(self) -> bool:

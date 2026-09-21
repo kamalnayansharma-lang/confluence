@@ -172,6 +172,18 @@ CONFIG_FIELDS: list[ConfigField] = [
             "to skip."
         ),
     ),
+    ConfigField(
+        "PR_FEEDBACK_POLL_ENABLED", "Enable PR feedback loop", "Repository", input_type="select",
+        options=["true", "false"],
+        help_text=(
+            "When enabled, the agent monitors open PRs carrying the agent:opened label for review "
+            "comments, re-runs the change engine to address feedback, and pushes follow-up commits."
+        ),
+    ),
+    ConfigField(
+        "PR_FEEDBACK_POLL_INTERVAL_SECONDS", "PR feedback poll interval (seconds)", "Repository",
+        input_type="number", placeholder="300",
+    ),
     # Change engine
     ConfigField(
         "CHANGE_AGENT_ENGINE", "Change engine", "Change engine", input_type="select",

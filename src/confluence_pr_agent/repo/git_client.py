@@ -108,3 +108,8 @@ class GitClient:
 
     async def push(self, repo_dir: Path, branch_name: str) -> None:
         await _run("git", "push", "-u", "origin", branch_name, cwd=repo_dir)
+
+    async def head_sha(self, repo_dir: Path) -> str:
+        """Returns the current HEAD commit SHA."""
+        output = await _run("git", "rev-parse", "HEAD", cwd=repo_dir)
+        return output.strip()
