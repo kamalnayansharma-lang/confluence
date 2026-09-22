@@ -127,6 +127,13 @@ class Settings(BaseSettings):
     confluence_poll_enabled: bool = Field(default=False)
     confluence_poll_interval_seconds: int = Field(default=300)
 
+    # PR feedback loop -- when enabled, a background poller watches open PRs
+    # tagged with "agent:opened" for new review comments, then re-runs the
+    # change engine with the comment body as retry_context and pushes a
+    # follow-up commit. See pipeline/pr_feedback_poller.py.
+    pr_feedback_poll_enabled: bool = Field(default=False)
+    pr_feedback_poll_interval_seconds: int = Field(default=300)
+
     # Target repo -- REPO_PROVIDER is forward-looking config surface only:
     # github is the only value the pipeline actually implements (see
     # pipeline/orchestrator.py::build_deps, which raises if it's anything

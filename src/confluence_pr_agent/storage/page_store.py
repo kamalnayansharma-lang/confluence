@@ -98,3 +98,39 @@ class PageStore:
             existing["jira_issue_key"] = issue_key
             data[page_id] = existing
             self._write(data)
+
+    def list_all(self) -> list[StoredPage]:
+        with self._lock:
+            return list(self._read().values())
+
+    def update_repo_pr_field(self, page_id: str, target_repo: str, key: str, value: object) -> None:
+        """Merges a single key into the repo_prs[target_repo] dict for a page,
+        without overwriting the rest of the record -- used by the PR feedback
+        poller to track last_seen_comment_id and feedback_attempts.
+        """
+        with self._lock:
+            data = self._read()
+            page = data.get(page_id)
+            if page is None:
+                return
+            repo_prs = page.get("repo_prs")
+            if repo_prs is None:
+                repo_prs = {}
+            entry = dict(repo_prs.get(target_repo) or {})
+            # Migrate the pre-multi-repo single-PR fields when the feedback
+            # loop first persists per-PR state. Without this, writing
+            # last_seen_comment_id would make the legacy PR undiscoverable on
+            # the next poll because repo_prs would exist without its number.
+            if not entry and not repo_prs:
+                legacy_number = page.get("open_pr_number")
+                legacy_branch = page.get("open_pr_branch")
+                if legacy_number and legacy_branch:
+                    entry.update(
+                        open_pr_number=legacy_number,
+                        open_pr_branch=legacy_branch,
+                    )
+            entry[key] = value
+            repo_prs[target_repo] = entry
+            page["repo_prs"] = repo_prs
+            data[page_id] = page
+            self._write(data)

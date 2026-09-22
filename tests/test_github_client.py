@@ -189,3 +189,37 @@ async def test_remove_label_treats_not_found_as_success():
     client = GitHubClient(token="test-token")
     await client.remove_label("acme/widgets", 42, "agent:warning")  # must not raise
     await client.aclose()
+
+
+@respx.mock
+async def test_list_review_comments_fetches_pull_request_comments():
+    route = respx.get("https://api.github.com/repos/acme/widgets/pulls/42/comments").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"id": 101, "body": "Looks good", "user": {"login": "alice", "type": "User"}},
+                {"id": 102, "body": "Fix the bug", "user": {"login": "octocat", "type": "Bot"}},
+            ],
+        )
+    )
+
+    client = GitHubClient(token="test-token")
+    comments = await client.list_review_comments("acme/widgets", 42)
+    await client.aclose()
+
+    assert [c["id"] for c in comments] == [101, 102]
+    assert route.calls.last.request.url.params["per_page"] == "100"
+
+
+@respx.mock
+async def test_add_pull_request_comment_posts_to_issue_comments_endpoint():
+    route = respx.post("https://api.github.com/repos/acme/widgets/issues/42/comments").mock(
+        return_value=httpx.Response(201, json={"id": 99})
+    )
+
+    client = GitHubClient(token="test-token")
+    await client.add_pull_request_comment("acme/widgets", 42, "Fixed in follow-up commit.")
+    await client.aclose()
+
+    sent = json.loads(route.calls.last.request.content)
+    assert sent == {"body": "Fixed in follow-up commit."}
