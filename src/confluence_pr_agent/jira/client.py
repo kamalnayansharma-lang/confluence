@@ -14,6 +14,20 @@ from confluence_pr_agent.models import JiraIssueResult, JiraIssueStatus
 API_VERSION = "3"
 
 
+def normalize_jira_base_url(base_url: str) -> str:
+    """Return a Jira site URL that httpx can request.
+
+    The config UI historically accepted host-only values such as
+    ``team.atlassian.net``. Jira URLs are HTTPS by default, so add the
+    scheme rather than allowing httpx to fail with a low-level
+    "missing an 'http://' or 'https://' protocol" error.
+    """
+    base_url = base_url.strip()
+    if base_url and "://" not in base_url:
+        return f"https://{base_url}"
+    return base_url
+
+
 class JiraClient:
     """`base_url` is the site root, e.g. https://your-team.atlassian.net --
     no /wiki suffix (that's Confluence-specific; Jira Cloud's REST API and
@@ -27,7 +41,7 @@ class JiraClient:
         api_token: str,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_url = normalize_jira_base_url(base_url).rstrip("/")
         self._auth = httpx.BasicAuth(email, api_token)
         self._client = http_client or httpx.AsyncClient(timeout=30.0)
         self._owns_client = http_client is None

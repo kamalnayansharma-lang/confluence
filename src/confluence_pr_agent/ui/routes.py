@@ -278,6 +278,10 @@ async def jira_bugs_poll(request: Request, username: str = Depends(current_usern
         scan = await poll_jira(settings)
         mark_approved_issues(settings, scan)
         return RedirectResponse(url="/ui/jira-bugs?polled=1", status_code=303)
+    except httpx.HTTPStatusError as exc:
+        return RedirectResponse(url=f"/ui/jira-bugs?error={_http_error_message(exc)}", status_code=303)
+    except httpx.HTTPError as exc:
+        return RedirectResponse(url=f"/ui/jira-bugs?error=Couldn%27t%20reach%20Jira:%20{str(exc)[:120]}", status_code=303)
     except Exception as exc:
         return RedirectResponse(url=f"/ui/jira-bugs?error={str(exc)[:180]}", status_code=303)
 

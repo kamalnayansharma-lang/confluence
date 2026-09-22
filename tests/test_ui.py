@@ -203,6 +203,21 @@ def test_jira_bug_analysis_remains_visible_after_fix_workflow_starts(client):
     assert "Open PR" in resp.text
 
 
+def test_jira_bug_poll_turns_unauthorized_response_into_actionable_message(client, monkeypatch):
+    request = httpx.Request("GET", "https://jira.example.com/rest/api/3/myself")
+    response = httpx.Response(401, request=request)
+
+    async def fail_poll(settings):
+        raise httpx.HTTPStatusError("unauthorized", request=request, response=response)
+
+    monkeypatch.setattr(ui_routes, "poll_jira", fail_poll)
+
+    resp = client.post("/ui/jira-bugs/poll", follow_redirects=False)
+
+    assert resp.status_code == 303
+    assert "Authentication%20failed" in resp.headers["location"]
+
+
 def test_runs_list_empty_state(client):
     resp = client.get("/ui/runs")
     assert resp.status_code == 200

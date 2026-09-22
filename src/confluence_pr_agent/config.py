@@ -30,7 +30,7 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from confluence_pr_agent.models import RepoTarget
@@ -229,6 +229,16 @@ class Settings(BaseSettings):
     jira_bug_poll_interval_seconds: int = Field(default=300)
     jira_bug_jql: str = Field(default="")
     jira_poll_limit: int = Field(default=25)
+
+    @field_validator("jira_base_url", mode="before")
+    @classmethod
+    def normalize_jira_base_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if value and "://" not in value:
+            return f"https://{value}"
+        return value
     # Comment-only, never written to the real Story Points field -- that
     # field is a per-instance custom field (customfield_NNNNN) with no
     # stable name, and an LLM's number has no basis in a team's own velocity
