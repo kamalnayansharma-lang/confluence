@@ -7,11 +7,14 @@ to the GitHub REST API (plain HTTP via httpx) for everything PR-shaped.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from confluence_pr_agent.models import PullRequestResult, PullRequestStatus
 
 GITHUB_API_BASE = "https://api.github.com"
+logger = logging.getLogger(__name__)
 
 
 class GitHubClient:
@@ -57,6 +60,21 @@ class GitHubClient:
         resp.raise_for_status()
         data = resp.json()
         return PullRequestResult(number=data["number"], url=data["html_url"], branch=head_branch, draft=data.get("draft", draft))
+
+    async def request_reviewers(self, owner_repo: str, pr_number: int, reviewers: list[str]) -> None:
+        if not reviewers:
+            return
+        try:
+            resp = await self._client.post(
+                f"/repos/{owner_repo}/pulls/{pr_number}/requested_reviewers",
+                json={"reviewers": reviewers},
+            )
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.warning(
+                "Could not request reviewers %s for %s#%s: %s",
+                reviewers, owner_repo, pr_number, exc,
+            )
 
     async def get_pull_request(self, owner_repo: str, pr_number: int) -> PullRequestStatus:
         """Fetched fresh each run (not trusted from the page store's cached

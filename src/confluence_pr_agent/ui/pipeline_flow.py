@@ -6,7 +6,28 @@ just different snapshots of the same pipeline/stages.py sequence.
 
 from __future__ import annotations
 
+import re
+
 from confluence_pr_agent.pipeline.stages import STAGE_KEYS, STAGE_LABELS
+
+_NEXT_STEPS_HEADING = re.compile(r"(?:^|\n)\s*#{0,6}\s*\*{0,2}next steps\*{0,2}\s*:?\s*(?:\n|$)", re.IGNORECASE)
+
+
+def split_next_steps(summary: str) -> tuple[str, str | None]:
+    """agent/prompts.py::build_repo_context instructs the agent to end its
+    summary with a heading-styled "Next steps" section, precisely when it
+    judged the change needs a repo outside what was checked out (the same
+    signal RunRecord.flagged_scope_gap is set from -- see orchestrator.py).
+    Split it out so run_detail.html can give it the same visual treatment
+    as the "more action needed" badge, instead of it reading as an
+    undifferentiated tail of a wall of prose in the Summary section.
+    """
+    match = _NEXT_STEPS_HEADING.search(summary)
+    if not match:
+        return summary, None
+    body = summary[: match.start()].rstrip()
+    next_steps = summary[match.end() :].strip()
+    return body, (next_steps or None)
 
 
 def _detail_for(key: str, run: dict) -> str | None:

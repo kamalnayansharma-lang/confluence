@@ -57,6 +57,30 @@ async def test_open_pull_request_draft_true_sends_draft_flag_and_reflects_respon
 
 
 @respx.mock
+async def test_request_reviewers_posts_reviewer_logins():
+    route = respx.post(
+        "https://api.github.com/repos/acme/widgets/pulls/42/requested_reviewers"
+    ).mock(return_value=httpx.Response(201, json={"requested_reviewers": []}))
+
+    client = GitHubClient(token="test-token")
+    await client.request_reviewers("acme/widgets", 42, ["octocat"])
+    await client.aclose()
+
+    assert json.loads(route.calls.last.request.content) == {"reviewers": ["octocat"]}
+
+
+@respx.mock
+async def test_request_reviewers_fails_open_when_github_rejects_reviewer():
+    respx.post("https://api.github.com/repos/acme/widgets/pulls/42/requested_reviewers").mock(
+        return_value=httpx.Response(422)
+    )
+
+    client = GitHubClient(token="test-token")
+    await client.request_reviewers("acme/widgets", 42, ["not-a-collaborator"])
+    await client.aclose()
+
+
+@respx.mock
 async def test_get_pull_request_reports_open_state():
     respx.get("https://api.github.com/repos/acme/widgets/pulls/42").mock(
         return_value=httpx.Response(200, json={"number": 42, "state": "open", "merged": False})

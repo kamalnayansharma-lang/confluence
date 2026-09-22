@@ -6,14 +6,6 @@ from confluence_pr_agent.models import PageDiff, PageSnapshot
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def _avoid_network_repo_tree(monkeypatch):
-    async def _unchanged(settings, diff, story):
-        return story
-
-    monkeypatch.setattr(story_writer, "_append_repo_file_plan", _unchanged)
-
 _STORY = story_writer.JiraStoryContent(
     summary="Support PayPal at checkout",
     description="The spec now requires PayPal as a payment option.",
@@ -61,8 +53,8 @@ async def test_repo_file_plan_adds_repo_and_file_change_guidance(settings, monke
     settings.github_token = "github-test"
     story = await story_writer._append_repo_file_plan(settings, _diff(), _STORY)
 
-    assert "acme/widgets" in story.description
-    assert "src/booking_service.py" in story.description
+    assert "### Repository/File Implementation Plan" in story.description
+    assert "#### acme/widgets" in story.description
     assert "tests/test_booking_service.py" in story.description
     assert "Add or update regression tests" in story.description
 

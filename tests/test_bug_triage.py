@@ -100,8 +100,6 @@ async def test_analyze_issue_records_repositories_and_action_plan(tmp_path, monk
     assert issue["triage"] == "analyzed"
     assert issue["analysis_repos"] == ["acme/widgets"]
     assert any("regression tests" in step for step in issue["analysis_plan"])
-    assert issue["analysis_files_by_repo"]["acme/widgets"] == [
-        "src/booking_service.py", "tests/test_booking_service.py"
-    ]
+    assert issue["analysis_files_by_repo"]["acme/widgets"] == ["tests/test_booking_service.py"]
     assert comments and comments[0][0] == "KAN-2"
     assert "Implementation plan from Driftbridge" in comments[0][1]

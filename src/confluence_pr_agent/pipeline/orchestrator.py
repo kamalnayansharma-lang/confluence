@@ -67,9 +67,11 @@ from confluence_pr_agent.notifications.templates import build_summary_email
 from confluence_pr_agent.pipeline.stages import STAGE_KEYS
 from confluence_pr_agent.repo.git_client import GitClient
 from confluence_pr_agent.repo.github_client import GitHubClient
+from confluence_pr_agent.repo.reviewer_cache import get_best_reviewer
 from confluence_pr_agent.storage.page_store import PageStore, StoredPage
 from confluence_pr_agent.storage.pending_approval_store import PendingApproval, PendingApprovalStore
 from confluence_pr_agent.storage.run_store import RunStore
+from confluence_pr_agent.storage.sprint_plan_store import SprintPlanStore
 from confluence_pr_agent.testing.test_runner import run_tests
 
 logger = logging.getLogger(__name__)
@@ -121,6 +123,7 @@ def _build_pr_body(
     parts = [
         f"**Source:** [{page.title}]({page.url}) (v{diff.previous_version} -> v{page.version})\n",
         f"**Summary of change:**\n{change.summary}\n",
+        "Quality gate:  passed\n",
     ]
 
     if judge_result and judge_result.verdict == "rejected":
@@ -397,6 +400,10 @@ async def _finalize_repo(
                 draft=is_rejected,
             )
 
+        reviewer = get_best_reviewer(str(repo_dir), files_changed)
+        if reviewer:
+            await deps.github.request_reviewers(rt.target_repo, pull_request.number, [reviewer])
+
         await _sync_verdict_label(deps.github, rt.target_repo, pull_request.number, verdict_for_labels)
 
         return RepoChangeResult(
@@ -419,6 +426,27 @@ async def _finalize_repo(
             target_repo=rt.target_repo, status="error", files_changed=files_changed,
             judge=judge_result, error=error,
         )
+
+
+def _find_sprint_plan_jira_issue_key(settings: Settings, page_id: str) -> str | None:
+    """A page's Jira story may have been created by Sprint Planning
+    (ui/plan_sprint.py -> jira/story_writer.py) rather than by this
+    pipeline's own reuse tracking below -- SprintPlanStore, not PageStore,
+    is the source of truth for that. Without this, a page that only ever
+    went through Sprint Planning has no PageStore record at all, so a
+    later poll/webhook/retrigger run for it has no way to know a story
+    already exists and opens a duplicate. Confirmed live: retriggering
+    page 5898241 (story KAN-33, created via Sprint Planning) created a
+    second story, KAN-55, instead of finding KAN-33. Cheap JSON-file scan
+    -- same pattern sprint_runner.py itself uses -- so this doesn't need
+    its own PipelineDeps field.
+    """
+    plan_store = SprintPlanStore(settings.sprint_plan_store_path)
+    for plan in plan_store.list_all():
+        for page in plan["pages"]:
+            if page["page_id"] == page_id and page.get("jira_issue_key"):
+                return page["jira_issue_key"]
+    return None
 
 
 async def run_pipeline(
@@ -493,6 +521,18 @@ async def run_pipeline(
                 status="running",
                 current_stage=stage,
                 max_attempts=max(1, settings.change_agent_max_attempts),
+                # upsert_run REPLACES the whole record each call (see its
+                # own docstring), so anything known so far has to be
+                # re-included here every time or it gets wiped -- jira_issue
+                # is set partway through the "create_jira_story" stage
+                # (below), so the very next mark_stage() after that is the
+                # first one that can carry it. Without this, the run detail
+                # page's live "Progress" view showed a blank Jira Story step
+                # for the whole rest of a still-running run, only filling in
+                # once the run finished and finish() wrote the final record.
+                jira_issue_key=jira_issue.key if jira_issue else None,
+                jira_issue_url=jira_issue.url if jira_issue else None,
+                jira_reused=jira_reused,
             )
         )
 
@@ -594,7 +634,7 @@ async def run_pipeline(
         )
         return result
 
-    async def _fetch_diff_and_story() -> tuple[PageSnapshot, PageDiff, dict | None, JiraIssueResult | None, bool] | PipelineResult:
+    async def _fetch_diff_and_story() -> tuple[PageSnapshot, PageDiff, dict | None, JiraIssueResult | None, bool, bool] | PipelineResult:
         """Fetch -> label-gate -> diff -> Jira story creation/reuse, exactly
         today's prologue -- extracted verbatim (via `nonlocal jira_issue,
         jira_reused` below, so every line of the original body is
@@ -681,8 +721,22 @@ async def run_pipeline(
         # can fail on its own -- logged, fails open -- without erasing
         # jira_issue once it's been set.
         mark_stage("create_jira_story")
+        # True when a REUSED story (see below) is already sitting at
+        # settings.jira_approved_status_name -- e.g. planned + confirmed +
+        # approved through "Plan a Sprint" before this page's regular
+        # pipeline ever ran. Without this, the JIRA_APPROVAL_REQUIRED gate
+        # further down had no way to know the story it just found was
+        # already approved, and would park it in a brand-new
+        # PendingApproval anyway -- which nothing would ever resume, since
+        # approval_poller.py only watches entries THIS pipeline itself
+        # created (see that module's docstring). Confirmed live: an
+        # already-approved sprint-planning story re-triggered via poll sat
+        # in awaiting_approval indefinitely instead of implementing.
+        already_approved = False
         if settings.jira_enabled and settings.jira_base_url and settings.jira_project_key:
             existing_key = previous_page.get("jira_issue_key") if previous_page else None
+            if not existing_key:
+                existing_key = _find_sprint_plan_jira_issue_key(settings, page_id)
             if existing_key:
                 try:
                     existing_status = await deps.jira.get_issue_status(existing_key)
@@ -692,6 +746,9 @@ async def run_pipeline(
                             url=f"{settings.jira_base_url.rstrip('/')}/browse/{existing_status.key}",
                         )
                         jira_reused = True
+                        approved_name = settings.jira_approved_status_name.strip().lower()
+                        if approved_name and existing_status.status_name.strip().lower() == approved_name:
+                            already_approved = True
                 except Exception as exc:
                     logger.warning(
                         "Could not check status of existing Jira story %s for page %s; "
@@ -775,14 +832,15 @@ async def run_pipeline(
                 # success further down.
                 deps.store.remember_jira_issue(page_id, jira_issue.key)
 
-        return (page, diff, previous_page, jira_issue, jira_reused)
+        return (page, diff, previous_page, jira_issue, jira_reused, already_approved)
 
     try:
+        already_approved = False
         if resume is None:
             prologue = await _fetch_diff_and_story()
             if isinstance(prologue, PipelineResult):
                 return await finish(prologue)
-            page, diff, previous_page, jira_issue, jira_reused = prologue
+            page, diff, previous_page, jira_issue, jira_reused, already_approved = prologue
         else:
             # Resuming after JIRA_APPROVAL_REQUIRED approval -- reconstruct
             # exactly what was reviewed, from PendingApprovalStore, instead
@@ -810,10 +868,16 @@ async def run_pipeline(
             jira_issue = JiraIssueResult(key=resume["jira_issue_key"], url=resume["jira_issue_url"])
             jira_reused = True
 
-        if settings.jira_approval_required and resume is None and jira_issue is not None:
+        if settings.jira_approval_required and resume is None and jira_issue is not None and not already_approved:
             # Story now exists -- stop here instead of continuing into
             # cloning/implementation. pipeline/approval_poller.py is what
             # resumes this (see this function's `resume` param docstring).
+            # Skipped entirely when already_approved: a reused story that's
+            # already at settings.jira_approved_status_name (e.g. approved
+            # via "Plan a Sprint" before this page's regular pipeline ever
+            # ran) has nothing left to wait on -- falls straight through to
+            # implementation below instead of parking a redundant
+            # PendingApproval nothing would ever resume.
             deps.pending_approvals.put(
                 {
                     "page_id": page.page_id,

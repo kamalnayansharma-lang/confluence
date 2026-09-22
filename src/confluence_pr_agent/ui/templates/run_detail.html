@@ -9,6 +9,9 @@
   <h1>
     {{ run.page_title or run.page_id }}
     <span class="badge badge-{{ run.status }}" style="vertical-align: middle; margin-left: 0.5rem;">{{ run.status | status_label }}</span>
+    {% if run.jira_issue_key %}
+      <a href="{{ run.jira_issue_url }}" target="_blank" rel="noopener" class="badge" style="vertical-align: middle; border: 1px solid var(--border); background: transparent;" title="{{ 'Existing story reused for reference -- created earlier, e.g. via Sprint Planning' if run.jira_reused else 'Story created by this run' }}">🎫 {{ run.jira_issue_key }}{% if run.jira_reused %} (reused){% endif %}</a>
+    {% endif %}
     {% if run.flagged_scope_gap %}
       <span class="badge badge-warning" style="vertical-align: middle;">⚠️ more action needed</span>
     {% endif %}
@@ -109,6 +112,17 @@
         {% if not (run.repo_results and run.repo_results|length > 1) %}
         <tr><th>Pull request</th><td>{% if run.pr_url %}<a class="pr-link" href="{{ run.pr_url }}" target="_blank" rel="noopener">#{{ run.pr_number }} &rarr;</a>{% if run.pr_draft %} <span class="badge badge-warning">draft</span>{% endif %}{% if run.reused_pr %} <span class="hint" style="display: inline;">(updated an existing open PR instead of opening a new one)</span>{% endif %}{% else %}&mdash;{% endif %}</td></tr>
         {% endif %}
+        {% if run.jira_issue_key %}
+        <tr>
+          <th>Jira story</th>
+          <td>
+            <a href="{{ run.jira_issue_url }}" target="_blank" rel="noopener">{{ run.jira_issue_key }}</a>
+            {% if run.jira_reused %}
+              <span class="hint" style="display: inline;">(existing story reused for reference -- created earlier, e.g. via Sprint Planning, rather than opened fresh by this run)</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
         <tr><th>Email</th><td>{% if run.email_sent %}<span style="color: var(--success-text);">sent</span>{% elif run.email_error %}<span style="color: var(--text-muted);">not sent &mdash; {{ run.email_error }}</span>{% else %}&mdash;{% endif %}</td></tr>
         {% if run.error and run.status == "ignored" %}
           <tr><th>Reason</th><td style="color: var(--text-muted);">{{ run.error }}</td></tr>
@@ -180,7 +194,13 @@
   {% if run.summary %}
   <fieldset>
     <legend>Summary</legend>
-    <p style="white-space: pre-wrap; line-height: 1.6; margin: 0;">{{ run.summary }}</p>
+    <p style="white-space: pre-wrap; line-height: 1.6; margin: 0;">{{ summary_body }}</p>
+    {% if summary_next_steps %}
+    <div class="banner" style="background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); margin-top: 1rem;">
+      <strong style="display: block; margin-bottom: 0.4rem;">⚠️ Next steps &mdash; more action needed</strong>
+      <p style="white-space: pre-wrap; line-height: 1.6; margin: 0;">{{ summary_next_steps }}</p>
+    </div>
+    {% endif %}
   </fieldset>
   {% endif %}
 

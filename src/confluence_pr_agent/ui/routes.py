@@ -40,7 +40,11 @@ from confluence_pr_agent.pipeline.poller import poll_once, retrigger_page
 from confluence_pr_agent.pipeline.jira_bug_poller import mark_approved_issues
 from confluence_pr_agent.pipeline.stages import STAGE_LABELS
 from confluence_pr_agent.repo.github_client import GitHubClient
-from confluence_pr_agent.repo.test_command_detection import detect_tech_stack, detect_test_command
+from confluence_pr_agent.repo.test_command_detection import (
+    detect_lint_command,
+    detect_tech_stack,
+    detect_test_command,
+)
 from confluence_pr_agent.storage.run_store import RunStore
 from confluence_pr_agent.ui.auth import current_username
 from confluence_pr_agent.ui.config_fields import (
@@ -51,7 +55,7 @@ from confluence_pr_agent.ui.config_fields import (
     REPO_CREDENTIAL_BY_PROVIDER,
 )
 from confluence_pr_agent.ui.diff_view import render_diff_html
-from confluence_pr_agent.ui.pipeline_flow import build_flow_steps
+from confluence_pr_agent.ui.pipeline_flow import build_flow_steps, split_next_steps
 from confluence_pr_agent.ui.usage_summary import summarize_usage
 
 router = APIRouter()
@@ -260,8 +264,6 @@ async def config_form(request: Request, username: str = Depends(current_username
 async def jira_bugs(request: Request, username: str = Depends(current_username)):
     settings = get_settings(username)
     analysis_issue_key = request.cookies.get("jira_analysis_once")
-    if not analysis_issue_key:
-        clear_analysis_display(settings)
     scan = load_scan(settings)
     response = templates.TemplateResponse(request, "jira_bugs.html", {"scan": scan, "settings": settings})
     if analysis_issue_key:
@@ -359,9 +361,10 @@ async def save_config(request: Request, username: str = Depends(current_username
 async def detect_test_command_route(repo: str, username: str = Depends(current_username)):
     """Called by the repeating repo-config editor's JS when a row's repo
     field is filled in -- looks at that repo's actual root files (via this
-    user's own GitHub token) and suggests a test command instead of leaving
-    it blank or wrong. Best-effort: any failure (bad repo name, no access,
-    network) degrades to {"test_command": None, "tech_stack": None}, same
+    user's own GitHub token) and suggests test and lint/security commands
+    instead of leaving them blank or wrong. Best-effort: any failure (bad
+    repo name, no access, network) degrades to {"test_command": None,
+    "lint_command": None, "tech_stack": None}, same
     fail-open idiom as everything else here -- this is a convenience, not
     something that should be able to break the config page.
 
@@ -372,22 +375,35 @@ async def detect_test_command_route(repo: str, username: str = Depends(current_u
     settings = get_settings(username)
     repo = repo.strip()
     if not repo or not settings.github_token:
-        return {"test_command": None, "tech_stack": None}
+        return {"test_command": None, "lint_command": None, "tech_stack": None}
 
     github = GitHubClient(settings.github_token)
     try:
         files = await github.list_root_files(repo)
-        return {"test_command": detect_test_command(files), "tech_stack": detect_tech_stack(files)}
+        return {
+            "test_command": detect_test_command(files),
+            "lint_command": detect_lint_command(files),
+            "tech_stack": detect_tech_stack(files),
+        }
     except Exception:
-        return {"test_command": None, "tech_stack": None}
+        return {"test_command": None, "lint_command": None, "tech_stack": None}
     finally:
         await github.aclose()
 
 
 def _http_error_message(exc: httpx.HTTPStatusError) -> str:
     status = exc.response.status_code
-    if status in (401, 403):
+    if status == 401:
         return "Authentication failed — check the credentials."
+    if status == 403:
+        # Distinct from 401 on purpose -- Atlassian returns this when the
+        # email/token pair is genuinely valid (auth succeeded) but the
+        # account has no product access grant on this site (e.g. a Jira
+        # seat but no Confluence one, or vice versa) -- confirmed live
+        # against a real "correct" token that failed with exactly this.
+        # Telling someone to "check the credentials" here sends them
+        # chasing a token rotation that was never the problem.
+        return "Credentials are valid, but this account doesn't have access to this product on this site — check product access in Atlassian admin, not the token."
     if status == 404:
         return "Not found — check the URL/key."
     return f"Request failed (HTTP {status})."
@@ -541,12 +557,26 @@ async def runs_list(
 
     runs = _filter_runs(all_runs, engine=engine, status=status, date_from=date_from, date_to=date_to)
 
+    # "Require approval before implementation" (Jira tab, Config) -- when on,
+    # a poll/webhook creates an `awaiting_approval` run as a placeholder the
+    # moment a Jira story is filed, before any real implementation work has
+    # happened. Hidden from the default view (still reachable via the Status
+    # filter) so this page reads as "what actually got implemented", not a
+    # queue of stories still waiting on a human -- unless the Status filter
+    # was explicitly set to awaiting_approval, in which case that's exactly
+    # what was asked for.
+    hide_awaiting_approval = settings.jira_approval_required and status != "awaiting_approval"
+    visible_runs = [r for r in runs if r.get("status") != "awaiting_approval"] if hide_awaiting_approval else runs
+    hidden_count = len(runs) - len(visible_runs)
+
     return templates.TemplateResponse(
         request,
         "runs.html",
         {
-            "runs": runs,
+            "runs": visible_runs,
             "total_count": len(all_runs),
+            "filtered_count": len(runs),
+            "hidden_count": hidden_count,
             "filters": {"engine": engine, "status": status, "date_from": date_from, "date_to": date_to},
             "engines_available": ALL_ENGINES,
             "statuses_available": ALL_STATUSES,
@@ -595,6 +625,7 @@ async def run_detail(request: Request, run_id: str, username: str = Depends(curr
             request, "run_detail.html", {"run": None, "run_id": run_id}, status_code=404
         )
     spec_diff = run.get("spec_diff")
+    summary_body, summary_next_steps = split_next_steps(run["summary"]) if run.get("summary") else (None, None)
     return templates.TemplateResponse(
         request,
         "run_detail.html",
@@ -604,6 +635,8 @@ async def run_detail(request: Request, run_id: str, username: str = Depends(curr
             "usage_summary": summarize_usage(run.get("usage")),
             "flow_steps": build_flow_steps(run),
             "spec_diff_html": render_diff_html(spec_diff) if spec_diff else None,
+            "summary_body": summary_body,
+            "summary_next_steps": summary_next_steps,
         },
     )
 

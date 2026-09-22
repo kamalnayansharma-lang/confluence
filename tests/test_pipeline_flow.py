@@ -1,7 +1,29 @@
 from __future__ import annotations
 
 from confluence_pr_agent.pipeline.stages import STAGE_KEYS
-from confluence_pr_agent.ui.pipeline_flow import build_flow_steps
+from confluence_pr_agent.ui.pipeline_flow import build_flow_steps, split_next_steps
+
+
+def test_split_next_steps_extracts_a_markdown_heading():
+    summary = "I did the thing.\n\n### Next steps\nAdd the `repo-ui` label and re-run."
+    body, next_steps = split_next_steps(summary)
+    assert body == "I did the thing."
+    assert next_steps == "Add the `repo-ui` label and re-run."
+
+
+def test_split_next_steps_is_case_insensitive_and_heading_style_agnostic():
+    for heading in ["Next steps", "NEXT STEPS", "next steps:", "**Next Steps**"]:
+        summary = f"Body text.\n\n{heading}\nDo the thing."
+        body, next_steps = split_next_steps(summary)
+        assert body == "Body text."
+        assert next_steps == "Do the thing."
+
+
+def test_split_next_steps_returns_none_when_no_heading_present():
+    summary = "Just a plain summary with no next steps section."
+    body, next_steps = split_next_steps(summary)
+    assert body == summary
+    assert next_steps is None
 
 
 def _run(**overrides) -> dict:

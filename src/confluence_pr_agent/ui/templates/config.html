@@ -371,6 +371,7 @@
           const data = await resp.json();
           const patch = {};
           if (data.test_command) patch.test_command = data.test_command;
+          if (data.lint_command) patch.lint_command = data.lint_command;
           // Only fill tech_stack if the row doesn't already have one -- this
           // fires on repo blur, which can happen after a user already typed
           // a stack by hand.
